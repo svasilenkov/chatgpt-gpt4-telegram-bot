@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/PullRequestInc/go-gpt3"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
@@ -159,8 +160,9 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 	}
 	text := ""
 	messageID := 0
+	startTime := time.Now().UTC()
 	for generatedText := range generatedTextStream {
-		if strings.TrimSpace(generatedText) == "" {
+		if generatedText == "" {
 			continue
 		}
 		if text == "" {
@@ -190,6 +192,10 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			continue
 		}
 		// Edit the message
+		if int(time.Since(startTime).Milliseconds()) < 1000 {
+			continue
+		}
+		startTime = time.Now().UTC()
 		msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text+"...")
 		_, err := bot.Send(msg)
 		if err != nil {
