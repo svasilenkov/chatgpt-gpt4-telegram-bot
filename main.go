@@ -382,11 +382,15 @@ func generateTextStreamWithGPT(client gpt3.Client, inputText string, chatID int6
 	})
 
 	temp := float32(0.7)
+	maxTokens := 4096
+	if model == GPT4Model {
+		maxTokens = 8192
+	}
 	request := gpt3.ChatCompletionRequest{
 		Model:       model,
 		Messages:    conversationHistory[chatID],
 		Temperature: &temp,
-		MaxTokens:   3000,
+		MaxTokens:   maxTokens,
 		TopP:        1,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
