@@ -3,12 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
-	"gopkg.in/yaml.v2"
 	"log"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"gopkg.in/yaml.v2"
 
 	"github.com/PullRequestInc/go-gpt3"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
@@ -46,7 +47,7 @@ type Config struct {
 
 func ReadConfig() (Config, error) {
 	var config Config
-	configFile, err := os.Open("gpt4_bot_config.yml")
+	configFile, err := os.Open("config.yml")
 	if err != nil {
 		return config, err
 	}
@@ -71,7 +72,7 @@ func main() {
 		log.Fatalf("Failed to read config: %v", err)
 	}
 	// Initialize the OpenAI API client
-	client := gpt3.NewClient(config.OpenAIKey)
+	client := gpt3.NewClient(config.OpenAIKey, gpt3.WithTimeout(3*60*time.Second))
 
 	// Initialize the Telegram bot
 	bot, err := tgbotapi.NewBotAPI(config.TelegramToken)
@@ -79,7 +80,7 @@ func main() {
 		log.Fatalf("Failed to create Telegram bot: %v", err)
 	}
 
-	bot.Debug = true
+	bot.Debug = false
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
 	// Listen for updates
@@ -197,12 +198,15 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 		}
 		startTime = time.Now().UTC()
 		msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text+"...")
+		msg.ParseMode = "Markdown"
 		_, err := bot.Send(msg)
 		if err != nil {
 			log.Printf("Failed to edit message: %v", err)
+			fmt.Println("Failed to edit message: %v", err)
 		}
 	}
 	msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text)
+	msg.ParseMode = "Markdown"
 	_, err = bot.Send(msg)
 	if err != nil {
 		log.Printf("Failed to edit message: %v", err)
@@ -388,18 +392,18 @@ func generateTextStreamWithGPT(client gpt3.Client, inputText string, chatID int6
 	}
 	e, err := tokenizer.NewEncoder()
 	if err != nil {
-		return "", fmt.Errorf("failed to create encoder: %w", err)
+		return nil, fmt.Errorf("failed to create encoder: %w", err)
 	}
 	totalTokens := 0
 	for _, message := range conversationHistory[chatID] {
 		q, err := e.Encode(message.Content)
 		if err != nil {
-			return "", fmt.Errorf("failed to encode message: %w", err)
+			return nil, fmt.Errorf("failed to encode message: %w", err)
 		}
 		totalTokens += len(q)
 		q, err = e.Encode(message.Role)
 		if err != nil {
-			return "", fmt.Errorf("failed to encode message: %w", err)
+			return nil, fmt.Errorf("failed to encode message: %w", err)
 		}
 		totalTokens += len(q)
 	}
@@ -411,7 +415,7 @@ func generateTextStreamWithGPT(client gpt3.Client, inputText string, chatID int6
 		MaxTokens:   maxTokens,
 		TopP:        1,
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 3*60*time.Second)
 	mu.Lock()
 	user := userSettingsMap[chatID]
 	user.CurrentContext = &cancel
