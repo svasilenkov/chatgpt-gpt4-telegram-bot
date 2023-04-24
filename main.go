@@ -382,10 +382,28 @@ func generateTextStreamWithGPT(client gpt3.Client, inputText string, chatID int6
 	})
 
 	temp := float32(0.7)
-	maxTokens := 3800
+	maxTokens := 4096
 	if model == GPT4Model {
-		maxTokens = 7500
+		maxTokens = 8192
 	}
+	e, err := tokenizer.NewEncoder()
+	if err != nil {
+		return "", fmt.Errorf("failed to create encoder: %w", err)
+	}
+	totalTokens := 0
+	for _, message := range conversationHistory[chatID] {
+		q, err := e.Encode(message.Content)
+		if err != nil {
+			return "", fmt.Errorf("failed to encode message: %w", err)
+		}
+		totalTokens += len(q)
+		q, err = e.Encode(message.Role)
+		if err != nil {
+			return "", fmt.Errorf("failed to encode message: %w", err)
+		}
+		totalTokens += len(q)
+	}
+	maxTokens -= totalTokens
 	request := gpt3.ChatCompletionRequest{
 		Model:       model,
 		Messages:    conversationHistory[chatID],
