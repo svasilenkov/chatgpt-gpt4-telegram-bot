@@ -80,7 +80,7 @@ func main() {
 		log.Fatalf("Failed to create Telegram bot: %v", err)
 	}
 
-	bot.Debug = false
+	bot.Debug = true
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
 	// Listen for updates
