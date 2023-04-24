@@ -382,9 +382,9 @@ func generateTextStreamWithGPT(client gpt3.Client, inputText string, chatID int6
 	})
 
 	temp := float32(0.7)
-	maxTokens := 4096
+	maxTokens := 3800
 	if model == GPT4Model {
-		maxTokens = 8192
+		maxTokens = 7500
 	}
 	request := gpt3.ChatCompletionRequest{
 		Model:       model,
