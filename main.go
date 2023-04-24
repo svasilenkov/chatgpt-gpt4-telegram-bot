@@ -81,13 +81,6 @@ func main() {
 	}
 
 	bot.Debug = false
-	bot.api.setMyCommands([
-		{ command: "new", description: "Начать новую беседу" },
-		{ command: "retry", description: "Повторить последний ответ" },
-		{ command: "gpt4", description: "Включить GPT4" },
-		{ command: "gpt35", description: "Включить GPT3.5" },
-		{ command: "system_prompt", description: "Задать системный промпт" },
-	]);
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
 	// Listen for updates
