@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -67,6 +68,18 @@ func ReadConfig() (Config, error) {
 	return config, nil
 }
 
+func isDebuggerPresent() bool {
+	var pcs [10]uintptr
+	n := runtime.Callers(2, pcs[:])
+	for i := 0; i < n; i++ {
+		f := runtime.FuncForPC(pcs[i])
+		if f != nil && f.Name() == "runtime/debug.*" {
+			return true
+		}
+	}
+	return false
+}
+
 const (
 	StateDefault                = ""
 	StateWaitingForSystemPrompt = "waiting_for_system_prompt"
@@ -87,7 +100,9 @@ func main() {
 		log.Fatalf("Failed to create Telegram bot: %v", err)
 	}
 
-	//bot.Debug = true
+	if !isDebuggerPresent() {
+		bot.Debug = true
+	}
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
 	// Listen for updates
