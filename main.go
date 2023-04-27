@@ -1,16 +1,23 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"gopkg.in/yaml.v2"
 
+	openai "github.com/0x9ef/openai-go"
 	"github.com/PullRequestInc/go-gpt3"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 	tokenizer "github.com/samber/go-gpt-3-encoder"
@@ -80,7 +87,7 @@ func main() {
 		log.Fatalf("Failed to create Telegram bot: %v", err)
 	}
 
-	bot.Debug = true
+	//bot.Debug = true
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
 	// Listen for updates
@@ -116,41 +123,76 @@ func contains(s []string, e string) bool {
 	return false
 }
 
-func convertAudioToText(audio *tgbotapi.Audio, bot *tgbotapi.BotAPI) string {
-	/*
-		client := gpt3.NewClient(config.OpenAIKey, gpt3.WithTimeout(3*60*time.Second))
+func convertOGAToMP3(ogaData []byte) ([]byte, error) {
+	if len(ogaData) == 0 {
+		return nil, errors.New("OGA data is empty")
+	}
 
-		// Download audio file
-		fileURL, err := bot.GetFileDirectURL(audio.FileID)
-		if err != nil {
-			log.Println(err)
-			return ""
-		}
+	// Prepare FFMPEG command to convert OGA to MP3
+	cmd := exec.Command("ffmpeg", "-i", "pipe:0", "-f", "mp3", "pipe:1")
+	cmd.Stdin = bytes.NewReader(ogaData)
 
-		resp, err := http.Get(fileURL)
-		if err != nil {
-			log.Println(err)
-			return ""
-		}
-		defer resp.Body.Close()
+	// Execute the command and read the output
+	var mp3Data bytes.Buffer
+	cmd.Stdout = &mp3Data
+	err := cmd.Run()
+	if err != nil {
+		return nil, err
+	}
 
-		// Convert audio file to text using OpenAI API
-		req := &client.CompletionRequest{
-			Model:       "text-davinci-002",
-			Prompt:      fmt.Sprintf("Convert audio to text: %s", fileURL),
-			MaxTokens:   1024,
-			Temperature: 0.7,
-		}
+	return mp3Data.Bytes(), nil
+}
 
-		oaiResp, err := client.Complete(req)
-		if err != nil {
-			log.Println(err)
-			return ""
-		}
+func convertAudioToText(message *tgbotapi.Message, bot *tgbotapi.BotAPI) string {
+	fileId := ""
+	if message.Voice != nil {
+		fileId = message.Voice.FileID
+	} else if message.Audio != nil {
+		fileId = message.Audio.FileID
+	}
+	// Download audio file
+	fileURL, err := bot.GetFileDirectURL(fileId)
+	if err != nil {
+		log.Println(err)
+		return ""
+	}
 
-		return oaiResp.Choices[0].Text
-	*/
-	return ""
+	if filepath.Ext(fileURL) != ".oga" {
+		fmt.Println("Unsupported audio format: " + filepath.Ext(fileURL))
+		return ""
+	}
+
+	resp, err := http.Get(fileURL)
+	if err != nil {
+		log.Println(err)
+		return ""
+	}
+	defer resp.Body.Close()
+
+	// Decode the audio file from base64 encoding
+	ogaAudioBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		// TODO: Handle error
+		return ""
+	}
+
+	mp3AudioBytes, err := convertOGAToMP3(ogaAudioBytes)
+	if err != nil {
+		return ""
+	}
+
+	audioOpts := &openai.AudioOptions{
+		File:        bytes.NewBuffer(mp3AudioBytes),
+		AudioFormat: "mp3",
+		Model:       openai.ModelWhisper,
+		Temperature: 0,
+	}
+	oai := openai.New(config.OpenAIKey)
+	r, err := oai.Transcribe(context.Background(), &openai.TranscribeOptions{AudioOptions: audioOpts})
+	if err != nil {
+		return ""
+	}
+	return r.Text
 }
 
 func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Client) {
@@ -192,8 +234,8 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 		log.Printf("Failed to send message: %v", err)
 	}*/
 	messageText := update.Message.Text
-	if update.Message.Audio != nil {
-		messageText = convertAudioToText(update.Message.Audio, bot)
+	if update.Message.Voice != nil || update.Message.Audio != nil {
+		messageText = convertAudioToText(update.Message, bot)
 	}
 	generatedTextStream, err := generateTextStreamWithGPT(client, messageText, update.Message.Chat.ID, model)
 	if err != nil {
