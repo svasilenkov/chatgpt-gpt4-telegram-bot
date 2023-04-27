@@ -116,9 +116,46 @@ func contains(s []string, e string) bool {
 	return false
 }
 
+func convertAudioToText(audio *tgbotapi.Audio, bot *tgbotapi.BotAPI) string {
+	/*
+		client := gpt3.NewClient(config.OpenAIKey, gpt3.WithTimeout(3*60*time.Second))
+
+		// Download audio file
+		fileURL, err := bot.GetFileDirectURL(audio.FileID)
+		if err != nil {
+			log.Println(err)
+			return ""
+		}
+
+		resp, err := http.Get(fileURL)
+		if err != nil {
+			log.Println(err)
+			return ""
+		}
+		defer resp.Body.Close()
+
+		// Convert audio file to text using OpenAI API
+		req := &client.CompletionRequest{
+			Model:       "text-davinci-002",
+			Prompt:      fmt.Sprintf("Convert audio to text: %s", fileURL),
+			MaxTokens:   1024,
+			Temperature: 0.7,
+		}
+
+		oaiResp, err := client.Complete(req)
+		if err != nil {
+			log.Println(err)
+			return ""
+		}
+
+		return oaiResp.Choices[0].Text
+	*/
+	return ""
+}
+
 func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Client) {
 	if !contains(config.AllowedUsers, update.Message.From.UserName) {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "You are not allowed to use this bot.")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вам нельзя пользоваться этим ботом")
 		bot.Send(msg)
 		return
 	}
@@ -137,7 +174,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			State:        StateDefault,
 		}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "System prompt set.")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Системный промпт установлен.")
 		bot.Send(msg)
 		return
 	}
@@ -154,7 +191,11 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 	if err != nil {
 		log.Printf("Failed to send message: %v", err)
 	}*/
-	generatedTextStream, err := generateTextStreamWithGPT(client, update.Message.Text, update.Message.Chat.ID, model)
+	messageText := update.Message.Text
+	if update.Message.Audio != nil {
+		messageText = convertAudioToText(update.Message.Audio, bot)
+	}
+	generatedTextStream, err := generateTextStreamWithGPT(client, messageText, update.Message.Chat.ID, model)
 	if err != nil {
 		log.Printf("Failed to generate text stream with GPT: %v", err)
 		return
@@ -232,7 +273,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			SystemPrompt: DefaultSystemPrompt,
 		}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Welcome to the GPT-4 Telegram bot!")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Добро пожаловать в GPT Телеграм-бот!")
 		bot.Send(msg)
 	case "new":
 		// Reset the conversation history for the user
@@ -244,7 +285,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			},
 		}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Conversation history cleared.")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "История беседы очищена.")
 		bot.Send(msg)
 	case "gpt4":
 		mu.Lock()
@@ -252,7 +293,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			Model: GPT4Model,
 		}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Switched to GPT-4 model.")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель GPT-4.")
 		bot.Send(msg)
 	case "gpt35":
 		mu.Lock()
@@ -260,7 +301,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			Model: GPT35TurboModel,
 		}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Switched to GPT-3.5-turbo model.")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель GPT-3.5-turbo.")
 		bot.Send(msg)
 	case "retry":
 		// Retry the last message
@@ -296,7 +337,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 				State:        StateWaitingForSystemPrompt,
 			}
 			mu.Unlock()
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Please provide a system prompt.")
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Напишите системный промпт.")
 			bot.Send(msg)
 			return
 		}
@@ -312,10 +353,10 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			},
 		}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, fmt.Sprintf("System prompt set: %s", commandArg))
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, fmt.Sprintf("Установлен системный промпт: %s", commandArg))
 		bot.Send(msg)
 	default:
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, fmt.Sprintf("Unknown command: %s", command))
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, fmt.Sprintf("Неизвестная команда: %s", command))
 		bot.Send(msg)
 	}
 }
@@ -407,7 +448,7 @@ func generateTextStreamWithGPT(client gpt3.Client, inputText string, chatID int6
 		}
 		totalTokens += len(q)
 	}
-	maxTokens -= totalTokens
+	maxTokens -= totalTokens + 100
 	request := gpt3.ChatCompletionRequest{
 		Model:       model,
 		Messages:    conversationHistory[chatID],
