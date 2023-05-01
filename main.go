@@ -253,7 +253,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 		messageText = convertAudioToText(update.Message, bot)
 
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, messageText)
-		msg_, err := bot.Send(msg)
+		_, err := bot.Send(msg)
 		if err != nil {
 			log.Printf("Failed to send message: %v", err)
 		}
