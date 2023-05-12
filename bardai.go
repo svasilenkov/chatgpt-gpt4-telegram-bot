@@ -2,12 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -22,8 +24,13 @@ type BardChatbot struct {
 	choice_id       string
 }
 
-func BardNewChatbot(sessionId, sessionAt string) *BardChatbot {
+func BardNewChatbot(sessionId string) *BardChatbot {
 	rand.Seed(time.Now().UnixNano())
+
+	sessionAt, err := getSessionAt(sessionId)
+	if err != nil {
+		return nil
+	}
 
 	return &BardChatbot{
 		sessionId: sessionId,
@@ -39,6 +46,44 @@ func BardNewChatbot(sessionId, sessionAt string) *BardChatbot {
 		},
 		reqid: rand.Intn(10000),
 	}
+}
+
+func getSessionAt(sessionId string) (string, error) {
+	req, err := http.NewRequest("GET", "https://bard.google.com/", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header = http.Header{
+		"Host":          []string{"bard.google.com"},
+		"X-Same-Domain": []string{"1"},
+		"User-Agent":    []string{"Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36"},
+		"Content-Type":  []string{"application/x-www-form-urlencoded;charset=UTF-8"},
+		"Origin":        []string{"https://bard.google.com"},
+		"Referer":       []string{"https://bard.google.com/"},
+		"Cookie":        []string{fmt.Sprintf("__Secure-1PSID=%s", sessionId)},
+	}
+
+	// Send the request
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("Error: %d", resp.StatusCode)
+	}
+
+	content, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	match := regexp.MustCompile(`SNlM0e":"(.*?)"`).FindStringSubmatch(string(content))
+	if len(match) != 2 {
+		fmt.Println(string(content))
+		return "", errors.New("Could not find SNlM0e")
+	}
+
+	return match[1], nil
 }
 
 func (c *BardChatbot) Ask(message string) (string, error) {

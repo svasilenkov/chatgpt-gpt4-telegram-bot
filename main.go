@@ -53,7 +53,6 @@ type Config struct {
 	TelegramToken    string   `yaml:"telegram_token"`
 	OpenAIKey        string   `yaml:"openai_api_key"`
 	BardAISessionId  string   `yaml:"bard_ai_session_id"`
-	BardAISessionAt  string   `yaml:"bard_ai_session_at"`
 	AllowedUsers     []string `yaml:"allowed_telegram_usernames"`
 	BardAllowedUsers []string `yaml:"bard_allowed_telegram_usernames"`
 }
@@ -106,7 +105,7 @@ func main() {
 	}
 
 	if !isDebuggerPresent() {
-		bot.Debug = true
+		//bot.Debug = true
 	}
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
@@ -405,9 +404,15 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			return
 		}
 		mu.Lock()
+		chatbot := BardNewChatbot(config.BardAISessionId)
+		if chatbot == nil {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Не удалось включить модель Bard AI.")
+			bot.Send(msg)
+			return
+		}
 		userSettingsMap[update.Message.Chat.ID] = User{
 			Model:       BardAIModel,
-			BardChatbot: BardNewChatbot(config.BardAISessionId, config.BardAISessionAt),
+			BardChatbot: chatbot,
 		}
 		mu.Unlock()
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель Bard AI.")
