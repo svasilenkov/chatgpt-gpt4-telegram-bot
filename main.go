@@ -27,6 +27,7 @@ import (
 const (
 	GPT4Model       = "gpt-4"
 	GPT35TurboModel = "gpt-3.5-turbo"
+	BardAIModel     = "bard-ai"
 )
 
 const DefaultModel = GPT35TurboModel
@@ -45,12 +46,16 @@ type User struct {
 	State                string
 	CurrentContext       *context.CancelFunc
 	CurrentMessageBuffer string
+	BardChatbot          *BardChatbot
 }
 
 type Config struct {
-	TelegramToken string   `yaml:"telegram_token"`
-	OpenAIKey     string   `yaml:"openai_api_key"`
-	AllowedUsers  []string `yaml:"allowed_telegram_usernames"`
+	TelegramToken    string   `yaml:"telegram_token"`
+	OpenAIKey        string   `yaml:"openai_api_key"`
+	BardAISessionId  string   `yaml:"bard_ai_session_id"`
+	BardAISessionAt  string   `yaml:"bard_ai_session_at"`
+	AllowedUsers     []string `yaml:"allowed_telegram_usernames"`
+	BardAllowedUsers []string `yaml:"bard_allowed_telegram_usernames"`
 }
 
 func ReadConfig() (Config, error) {
@@ -101,7 +106,7 @@ func main() {
 	}
 
 	if !isDebuggerPresent() {
-		bot.Debug = true
+		//bot.Debug = true
 	}
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
@@ -258,62 +263,88 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			log.Printf("Failed to send message: %v", err)
 		}
 	}
-	generatedTextStream, err := generateTextStreamWithGPT(client, messageText, update.Message.Chat.ID, model)
-	if err != nil {
-		log.Printf("Failed to generate text stream with GPT: %v", err)
-		return
-	}
-	text := ""
-	messageID := 0
-	startTime := time.Now().UTC()
-	for generatedText := range generatedTextStream {
-		if generatedText == "" {
-			continue
-		}
-		if text == "" {
-			// Send the first message
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, generatedText+"...")
+	if userSettingsMap[update.Message.Chat.ID].Model == BardAIModel {
+		response, err := userSettingsMap[update.Message.Chat.ID].BardChatbot.Ask(messageText)
+		if err != nil {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка обращаения к Bard AI: "+err.Error())
 			msg.ReplyToMessageID = update.Message.MessageID
-			msg_, err := bot.Send(msg)
+			_, err := bot.Send(msg)
 			if err != nil {
-				log.Printf("Failed to send message: %v", err)
+				fmt.Println(err)
 			}
-			messageID = msg_.MessageID
-			fmt.Println("Message ID: ", msg_.MessageID)
+		} else {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, response)
+			msg.ParseMode = "Markdown"
+			msg.ReplyToMessageID = update.Message.MessageID
+			_, err := bot.Send(msg)
+			if err != nil {
+				log.Printf("Failed to send message as Markdown: %v"+response, err)
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, response)
+				msg.ReplyToMessageID = update.Message.MessageID
+				_, err := bot.Send(msg)
+				if err != nil {
+					log.Printf("Failed to send message as Markdown: %v", err)
+				}
+			}
+		}
+	} else {
+		generatedTextStream, err := generateTextStreamWithGPT(client, messageText, update.Message.Chat.ID, model)
+		if err != nil {
+			log.Printf("Failed to generate text stream with GPT: %v", err)
+			return
+		}
+		text := ""
+		messageID := 0
+		startTime := time.Now().UTC()
+		for generatedText := range generatedTextStream {
+			if generatedText == "" {
+				continue
+			}
+			if text == "" {
+				// Send the first message
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, generatedText+"...")
+				msg.ReplyToMessageID = update.Message.MessageID
+				msg_, err := bot.Send(msg)
+				if err != nil {
+					log.Printf("Failed to send message: %v", err)
+				}
+				messageID = msg_.MessageID
+				fmt.Println("Message ID: ", msg_.MessageID)
+				text += generatedText
+				continue
+			}
 			text += generatedText
-			continue
-		}
-		text += generatedText
-		// if the length of the text is too long, send a new message
-		if len(text) > 4096 {
-			text = generatedText
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, text)
-			msg.ReplyToMessageID = messageID
-			msg_, err := bot.Send(msg)
-			if err != nil {
-				log.Printf("Failed to send message: %v", err)
+			// if the length of the text is too long, send a new message
+			if len(text) > 4096 {
+				text = generatedText
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, text)
+				msg.ReplyToMessageID = messageID
+				msg_, err := bot.Send(msg)
+				if err != nil {
+					log.Printf("Failed to send message: %v", err)
+				}
+				messageID = msg_.MessageID
+				continue
 			}
-			messageID = msg_.MessageID
-			continue
+			// Edit the message
+			if int(time.Since(startTime).Milliseconds()) < 1000 {
+				continue
+			}
+			startTime = time.Now().UTC()
+			msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text+"...")
+			msg.ParseMode = "Markdown"
+			_, err := bot.Send(msg)
+			if err != nil {
+				log.Printf("Failed to edit message: %v", err)
+				fmt.Println("Failed to edit message: %v", err)
+			}
 		}
-		// Edit the message
-		if int(time.Since(startTime).Milliseconds()) < 1000 {
-			continue
-		}
-		startTime = time.Now().UTC()
-		msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text+"...")
+		msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text)
 		msg.ParseMode = "Markdown"
-		_, err := bot.Send(msg)
+		_, err = bot.Send(msg)
 		if err != nil {
 			log.Printf("Failed to edit message: %v", err)
-			fmt.Println("Failed to edit message: %v", err)
 		}
-	}
-	msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text)
-	msg.ParseMode = "Markdown"
-	_, err = bot.Send(msg)
-	if err != nil {
-		log.Printf("Failed to edit message: %v", err)
 	}
 	CompleteResponse(update.Message.Chat.ID)
 }
@@ -347,6 +378,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 				Content: userSettingsMap[update.Message.Chat.ID].SystemPrompt,
 			},
 		}
+		userSettingsMap[update.Message.Chat.ID].BardChatbot.Reset()
 		mu.Unlock()
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "История беседы очищена.")
 		bot.Send(msg)
@@ -365,6 +397,20 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 		}
 		mu.Unlock()
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель GPT-3.5-turbo.")
+		bot.Send(msg)
+	case "bardai":
+		if !contains(config.BardAllowedUsers, update.Message.From.UserName) {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вам нельзя пользоваться моделью Bard AI.")
+			bot.Send(msg)
+			return
+		}
+		mu.Lock()
+		userSettingsMap[update.Message.Chat.ID] = User{
+			Model:       BardAIModel,
+			BardChatbot: BardNewChatbot(config.BardAISessionId, config.BardAISessionAt),
+		}
+		mu.Unlock()
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель Bard AI.")
 		bot.Send(msg)
 	case "retry":
 		// Retry the last message
