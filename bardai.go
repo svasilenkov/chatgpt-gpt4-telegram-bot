@@ -101,6 +101,9 @@ func (c *BardChatbot) Ask(message string) (string, error) {
 	if len(wholeResponse) < 1 || len(wholeResponse[0]) < 3 {
 		return "", fmt.Errorf("Error: invalid response")
 	}
+	if wholeResponse[0][2] == nil {
+		return "", fmt.Errorf("Error: invalid response")
+	}
 
 	if err := json.Unmarshal([]byte(wholeResponse[0][2].(string)), &responseData); err != nil {
 		return "", err
