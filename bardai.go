@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -81,6 +82,7 @@ func (c *BardChatbot) Ask(message string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	log.Printf("Bard AI response: %s", content)
 
 	// Split the response body
 	split := strings.Split(string(content), "\n")
@@ -95,6 +97,10 @@ func (c *BardChatbot) Ask(message string) (string, error) {
 	}
 
 	responseData := [][]interface{}{}
+
+	if len(wholeResponse) < 1 || len(wholeResponse[0]) < 3 {
+		return "", fmt.Errorf("Error: invalid response")
+	}
 
 	if err := json.Unmarshal([]byte(wholeResponse[0][2].(string)), &responseData); err != nil {
 		return "", err
