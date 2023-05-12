@@ -106,7 +106,7 @@ func main() {
 	}
 
 	if !isDebuggerPresent() {
-		//bot.Debug = true
+		bot.Debug = true
 	}
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 

@@ -100,7 +100,13 @@ func (c *BardChatbot) Ask(message string) (string, error) {
 		return "", err
 	}
 	choices := []interface{}{}
+	if len(responseData) < 5 || len(responseData[4]) < 2 {
+		return "", fmt.Errorf("Error: invalid response")
+	}
 	choices = responseData[4][0].([]interface{})
+	if len(choices) < 1 {
+		return "", fmt.Errorf("Error: invalid response")
+	}
 	c.conversation_id = responseData[1][0].(string)
 	c.response_id = responseData[1][1].(string)
 	c.choice_id = choices[0].(string)
