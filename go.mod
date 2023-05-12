@@ -1,4 +1,4 @@
-module cool_things/gpt4_experiments
+module chat_bot
 
 go 1.19
 
