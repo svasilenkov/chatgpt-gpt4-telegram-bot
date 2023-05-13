@@ -186,6 +186,9 @@ func (c *BardChatbot) Ask(message string) (string, error) {
 }
 
 func (c *BardChatbot) Reset() {
+	if c == nil {
+		return
+	}
 	c.conversation_id = ""
 	c.response_id = ""
 	c.choice_id = ""
