@@ -17,6 +17,7 @@ import (
 type BardChatbot struct {
 	sessionId       string
 	sessionAt       string
+	sessionBl       string
 	headers         http.Header
 	reqid           int
 	conversation_id string
@@ -27,14 +28,15 @@ type BardChatbot struct {
 func BardNewChatbot(sessionId string) *BardChatbot {
 	rand.Seed(time.Now().UnixNano())
 
-	sessionAt, err := getSessionAt(sessionId)
+	sessionAtAndBl, err := getSessionAtAndBl(sessionId)
 	if err != nil {
 		return nil
 	}
 
 	return &BardChatbot{
 		sessionId: sessionId,
-		sessionAt: sessionAt,
+		sessionAt: sessionAtAndBl[0],
+		sessionBl: sessionAtAndBl[1],
 		headers: http.Header{
 			"Host":                      []string{"bard.google.com"},
 			"X-Same-Domain":             []string{"1"},
@@ -56,10 +58,10 @@ func BardNewChatbot(sessionId string) *BardChatbot {
 	}
 }
 
-func getSessionAt(sessionId string) (string, error) {
+func getSessionAtAndBl(sessionId string) ([]string, error) {
 	req, err := http.NewRequest("GET", "https://bard.google.com/", nil)
 	if err != nil {
-		return "", err
+		return []string{"", ""}, err
 	}
 	req.Header = http.Header{
 		"Host":                      []string{"bard.google.com"},
@@ -82,24 +84,30 @@ func getSessionAt(sessionId string) (string, error) {
 	// Send the request
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		return []string{"", ""}, err
 	}
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("Error: %d", resp.StatusCode)
+		return []string{"", ""}, fmt.Errorf("Error: %d", resp.StatusCode)
 	}
 
 	content, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return []string{"", ""}, err
 	}
 
-	match := regexp.MustCompile(`SNlM0e":"(.*?)"`).FindStringSubmatch(string(content))
-	if len(match) != 2 {
+	matchAt := regexp.MustCompile(`SNlM0e":"(.*?)"`).FindStringSubmatch(string(content))
+	if len(matchAt) != 2 {
 		fmt.Println(string(content))
-		return "", errors.New("Could not find SNlM0e")
+		return []string{"", ""}, errors.New("Could not find SNlM0e")
 	}
 
-	return match[1], nil
+	matchBl := regexp.MustCompile(`cfb2h":"(.*?)"`).FindStringSubmatch(string(content))
+	if len(matchBl) != 2 {
+		fmt.Println(string(content))
+		return []string{"", ""}, errors.New("Could not find cfb2h")
+	}
+
+	return []string{matchAt[1], matchBl[1]}, nil
 }
 
 func (c *BardChatbot) Ask(message string) (string, error) {
@@ -123,7 +131,7 @@ func (c *BardChatbot) Ask(message string) (string, error) {
 	}
 
 	// Make the request
-	req, err := http.NewRequest("POST", "https://bard.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate?bl="+url.QueryEscape("boq_assistant-bard-web-server_20230419.00_p1")+"&_reqid="+fmt.Sprintf("%04d", c.reqid)+"&rt=c", strings.NewReader(values.Encode()))
+	req, err := http.NewRequest("POST", "https://bard.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate?bl="+url.QueryEscape(c.sessionBl)+"&_reqid="+fmt.Sprintf("%04d", c.reqid)+"&rt=c", strings.NewReader(values.Encode()))
 	if err != nil {
 		return "", err
 	}
