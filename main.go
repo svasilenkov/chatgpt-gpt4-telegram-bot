@@ -27,7 +27,7 @@ import (
 const (
 	GPT4Model       = "gpt-4"
 	GPT35TurboModel = "gpt-3.5-turbo"
-	BardAIModel     = "bard-ai"
+	BardModel       = "bard"
 )
 
 const DefaultModel = GPT35TurboModel
@@ -52,7 +52,7 @@ type User struct {
 type Config struct {
 	TelegramToken    string   `yaml:"telegram_token"`
 	OpenAIKey        string   `yaml:"openai_api_key"`
-	BardAISessionId  string   `yaml:"bard_ai_session_id"`
+	BardSessionId    string   `yaml:"bard_session_id"`
 	AllowedUsers     []string `yaml:"allowed_telegram_usernames"`
 	BardAllowedUsers []string `yaml:"bard_allowed_telegram_usernames"`
 }
@@ -262,10 +262,10 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			log.Printf("Failed to send message: %v", err)
 		}
 	}
-	if userSettingsMap[update.Message.Chat.ID].Model == BardAIModel {
+	if userSettingsMap[update.Message.Chat.ID].Model == BardModel {
 		response, err := userSettingsMap[update.Message.Chat.ID].BardChatbot.Ask(messageText)
 		if err != nil {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка обращаения к Bard AI: "+err.Error())
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка обращаения к Bard: "+err.Error())
 			msg.ReplyToMessageID = update.Message.MessageID
 			_, err := bot.Send(msg)
 			if err != nil {
@@ -387,7 +387,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			Model: GPT4Model,
 		}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель GPT-4.")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель OpenAI GPT-4.")
 		bot.Send(msg)
 	case "gpt35":
 		mu.Lock()
@@ -395,27 +395,27 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			Model: GPT35TurboModel,
 		}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель GPT-3.5-turbo.")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель OpenAI GPT-3.5-turbo.")
 		bot.Send(msg)
-	case "bardai":
+	case "bard":
 		if !contains(config.BardAllowedUsers, update.Message.From.UserName) {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вам нельзя пользоваться моделью Bard AI.")
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вам нельзя пользоваться моделью Google Bard.")
 			bot.Send(msg)
 			return
 		}
 		mu.Lock()
-		chatbot := BardNewChatbot(config.BardAISessionId)
+		chatbot := BardNewChatbot(config.BardSessionId)
 		if chatbot == nil {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Не удалось включить модель Bard AI.")
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Не удалось включить модель Google Bard.")
 			bot.Send(msg)
 			return
 		}
 		userSettingsMap[update.Message.Chat.ID] = User{
-			Model:       BardAIModel,
+			Model:       BardModel,
 			BardChatbot: chatbot,
 		}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель Bard AI.")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель Google Bard.")
 		bot.Send(msg)
 	case "retry":
 		// Retry the last message

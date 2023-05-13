@@ -1,7 +1,7 @@
 start - Начать работу с ботом
 new - Начать новую беседу
 retry - Повторить последний ответ
-gpt4 - Включить GPT4
-gpt35 - Включить GPT3.5
-bardai - Включить Bard AI
+gpt4 - Включить OpenAI GPT4
+gpt35 - Включить OpenAI GPT3.5
+bard - Включить Google Bard
 system_prompt - Задать системный промпт
