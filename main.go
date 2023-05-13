@@ -52,7 +52,7 @@ type User struct {
 type Config struct {
 	TelegramToken    string   `yaml:"telegram_token"`
 	OpenAIKey        string   `yaml:"openai_api_key"`
-	BardSessionId    string   `yaml:"bard_session_id"`
+	BardSession      string   `yaml:"bard_session_id"`
 	AllowedUsers     []string `yaml:"allowed_telegram_usernames"`
 	BardAllowedUsers []string `yaml:"bard_allowed_telegram_usernames"`
 }
@@ -404,7 +404,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			return
 		}
 		mu.Lock()
-		chatbot := BardNewChatbot(config.BardSessionId)
+		chatbot := BardNewChatbot(config.BardSession)
 		if chatbot == nil {
 			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Не удалось включить модель Google Bard.")
 			bot.Send(msg)
