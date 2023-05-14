@@ -266,6 +266,14 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 	messageText := update.Message.Text
 	if update.Message.Voice != nil || update.Message.Audio != nil {
 		messageText = convertAudioToText(update.Message, bot)
+		if messageText == "" {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Не удалось распознать аудио")
+			msg.ReplyToMessageID = update.Message.MessageID
+			_, err := bot.Send(msg)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
 
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, messageText)
 		_, err := bot.Send(msg)
@@ -273,87 +281,89 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			log.Printf("Failed to send message: %v", err)
 		}
 	}
-	if userSettingsMap[update.Message.Chat.ID].Model == BardModel {
-		response, err := userSettingsMap[update.Message.Chat.ID].BardChatbot.Ask(messageText)
-		if err != nil {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка обращаения к Bard: "+err.Error())
-			msg.ReplyToMessageID = update.Message.MessageID
-			_, err := bot.Send(msg)
+	if messageText != "" {
+		if userSettingsMap[update.Message.Chat.ID].Model == BardModel {
+			response, err := userSettingsMap[update.Message.Chat.ID].BardChatbot.Ask(messageText)
 			if err != nil {
-				fmt.Println(err)
-			}
-		} else {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, response)
-			msg.ParseMode = "Markdown"
-			msg.ReplyToMessageID = update.Message.MessageID
-			_, err := bot.Send(msg)
-			if err != nil {
-				log.Printf("Failed to send message as Markdown: %v"+response, err)
-				msg := tgbotapi.NewMessage(update.Message.Chat.ID, response)
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка обращаения к Bard: "+err.Error())
 				msg.ReplyToMessageID = update.Message.MessageID
 				_, err := bot.Send(msg)
 				if err != nil {
-					log.Printf("Failed to send message as Markdown: %v", err)
+					fmt.Println(err)
 				}
-			}
-		}
-	} else {
-		generatedTextStream, err := generateTextStreamWithGPT(client, messageText, update.Message.Chat.ID, model)
-		if err != nil {
-			log.Printf("Failed to generate text stream with GPT: %v", err)
-			return
-		}
-		text := ""
-		messageID := 0
-		startTime := time.Now().UTC()
-		for generatedText := range generatedTextStream {
-			if generatedText == "" {
-				continue
-			}
-			if text == "" {
-				// Send the first message
-				msg := tgbotapi.NewMessage(update.Message.Chat.ID, generatedText+"...")
+			} else {
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, response)
+				msg.ParseMode = "Markdown"
 				msg.ReplyToMessageID = update.Message.MessageID
-				msg_, err := bot.Send(msg)
+				_, err := bot.Send(msg)
 				if err != nil {
-					log.Printf("Failed to send message: %v", err)
+					log.Printf("Failed to send message as Markdown: %v"+response, err)
+					msg := tgbotapi.NewMessage(update.Message.Chat.ID, response)
+					msg.ReplyToMessageID = update.Message.MessageID
+					_, err := bot.Send(msg)
+					if err != nil {
+						log.Printf("Failed to send message as Markdown: %v", err)
+					}
 				}
-				messageID = msg_.MessageID
-				fmt.Println("Message ID: ", msg_.MessageID)
+			}
+		} else {
+			generatedTextStream, err := generateTextStreamWithGPT(client, messageText, update.Message.Chat.ID, model)
+			if err != nil {
+				log.Printf("Failed to generate text stream with GPT: %v", err)
+				return
+			}
+			text := ""
+			messageID := 0
+			startTime := time.Now().UTC()
+			for generatedText := range generatedTextStream {
+				if generatedText == "" {
+					continue
+				}
+				if text == "" {
+					// Send the first message
+					msg := tgbotapi.NewMessage(update.Message.Chat.ID, generatedText+"...")
+					msg.ReplyToMessageID = update.Message.MessageID
+					msg_, err := bot.Send(msg)
+					if err != nil {
+						log.Printf("Failed to send message: %v", err)
+					}
+					messageID = msg_.MessageID
+					fmt.Println("Message ID: ", msg_.MessageID)
+					text += generatedText
+					continue
+				}
 				text += generatedText
-				continue
-			}
-			text += generatedText
-			// if the length of the text is too long, send a new message
-			if len(text) > 4096 {
-				text = generatedText
-				msg := tgbotapi.NewMessage(update.Message.Chat.ID, text)
-				msg.ReplyToMessageID = messageID
-				msg_, err := bot.Send(msg)
-				if err != nil {
-					log.Printf("Failed to send message: %v", err)
+				// if the length of the text is too long, send a new message
+				if len(text) > 4096 {
+					text = generatedText
+					msg := tgbotapi.NewMessage(update.Message.Chat.ID, text)
+					msg.ReplyToMessageID = messageID
+					msg_, err := bot.Send(msg)
+					if err != nil {
+						log.Printf("Failed to send message: %v", err)
+					}
+					messageID = msg_.MessageID
+					continue
 				}
-				messageID = msg_.MessageID
-				continue
+				// Edit the message
+				if int(time.Since(startTime).Milliseconds()) < 1000 {
+					continue
+				}
+				startTime = time.Now().UTC()
+				msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text+"...")
+				msg.ParseMode = "Markdown"
+				_, err := bot.Send(msg)
+				if err != nil {
+					log.Printf("Failed to edit message: %v", err)
+					continue
+				}
 			}
-			// Edit the message
-			if int(time.Since(startTime).Milliseconds()) < 1000 {
-				continue
-			}
-			startTime = time.Now().UTC()
-			msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text+"...")
+			msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text)
 			msg.ParseMode = "Markdown"
-			_, err := bot.Send(msg)
+			_, err = bot.Send(msg)
 			if err != nil {
 				log.Printf("Failed to edit message: %v", err)
-				continue
 			}
-		}
-		msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text)
-		msg.ParseMode = "Markdown"
-		_, err = bot.Send(msg)
-		if err != nil {
-			log.Printf("Failed to edit message: %v", err)
 		}
 	}
 	CompleteResponse(update.Message.Chat.ID)
