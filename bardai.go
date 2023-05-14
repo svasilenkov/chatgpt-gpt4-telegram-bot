@@ -120,7 +120,7 @@ func (c *BardChatbot) Ask(message string) (string, error) {
 	messageStructJson, _ := json.Marshal(messageStruct)
 
 	params := map[string]string{
-		"f.req": `[null, "` + strings.ReplaceAll(string(messageStructJson), `"`, `\"`) + `"]`,
+		"f.req": `[null, "` + strings.ReplaceAll(strings.ReplaceAll(string(messageStructJson), `\`, `\\`), `"`, `\"`) + `"]`,
 		"at":    c.sessionAt,
 	}
 

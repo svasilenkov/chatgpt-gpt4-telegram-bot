@@ -105,7 +105,7 @@ func main() {
 	}
 
 	if !isDebuggerPresent() {
-		bot.Debug = true
+		//bot.Debug = true
 	}
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
@@ -212,6 +212,17 @@ func convertAudioToText(message *tgbotapi.Message, bot *tgbotapi.BotAPI) string 
 		return ""
 	}
 	return r.Text
+}
+
+func telegramPrepareMarkdownMessage(msg string) string {
+	result := msg
+
+	entities := []string{"_", "*", "[", "]", "(", ")", "~", "`", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!"}
+
+	for _, entity := range entities {
+		result = strings.ReplaceAll(result, entity, `\`+entity)
+	}
+	return result
 }
 
 func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Client) {
@@ -335,7 +346,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			_, err := bot.Send(msg)
 			if err != nil {
 				log.Printf("Failed to edit message: %v", err)
-				fmt.Println("Failed to edit message: %v", err)
+				continue
 			}
 		}
 		msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text)
@@ -387,7 +398,8 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			Model: GPT4Model,
 		}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель OpenAI GPT-4.")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT-4*\\.")
+		msg.ParseMode = "MarkdownV2"
 		bot.Send(msg)
 	case "gpt35":
 		mu.Lock()
@@ -395,18 +407,21 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			Model: GPT35TurboModel,
 		}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель OpenAI GPT-3.5-turbo.")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT-3.5-turbo*\\.")
+		msg.ParseMode = "MarkdownV2"
 		bot.Send(msg)
 	case "bard":
 		if !contains(config.BardAllowedUsers, update.Message.From.UserName) {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вам нельзя пользоваться моделью Google Bard.")
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вам нельзя пользоваться моделью *Google Bard*\\.")
+			msg.ParseMode = "MarkdownV2"
 			bot.Send(msg)
 			return
 		}
 		mu.Lock()
 		chatbot := BardNewChatbot(config.BardSession)
 		if chatbot == nil {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Не удалось включить модель Google Bard.")
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Не удалось включить модель *Google Bard*\\.")
+			msg.ParseMode = "MarkdownV2"
 			bot.Send(msg)
 			return
 		}
@@ -415,8 +430,10 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			BardChatbot: chatbot,
 		}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель Google Bard.")
-		bot.Send(msg)
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, `Включена модель *Google Bard* \(`+telegramPrepareMarkdownMessage(chatbot.sessionBl)+`\)\.`)
+		msg.ParseMode = "MarkdownV2"
+		_, err := bot.Send(msg)
+		_ = err
 	case "retry":
 		// Retry the last message
 		mu.Lock()
