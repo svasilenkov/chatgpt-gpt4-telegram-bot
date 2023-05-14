@@ -292,6 +292,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 					fmt.Println(err)
 				}
 			} else {
+				response = strings.ReplaceAll(response, "\n* ", "\n-- ")
 				msg := tgbotapi.NewMessage(update.Message.Chat.ID, response)
 				msg.ParseMode = "Markdown"
 				msg.ReplyToMessageID = update.Message.MessageID
