@@ -151,7 +151,7 @@ func (c *BardChatbot) Ask(message string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	log.Printf("Bard AI response: %s", content)
+	log.Printf("Bard response: %s", content)
 
 	// Split the response body
 	split := strings.Split(string(content), "\n")
