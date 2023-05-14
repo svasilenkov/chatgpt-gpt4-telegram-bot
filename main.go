@@ -398,7 +398,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			Model: GPT4Model,
 		}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT-4*\\.")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT\\-4*\\.")
 		msg.ParseMode = "MarkdownV2"
 		bot.Send(msg)
 	case "gpt35":
@@ -407,7 +407,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			Model: GPT35TurboModel,
 		}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT-3.5-turbo*\\.")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT\\-3\\.5\\-turbo*\\.")
 		msg.ParseMode = "MarkdownV2"
 		bot.Send(msg)
 	case "bard":
