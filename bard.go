@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/olekukonko/tablewriter"
 )
 
 type BardChatbot struct {
@@ -205,5 +208,40 @@ func (c *BardChatbot) Reset() {
 func (c *BardChatbot) PrepareForTelegramMarkdown(msg string) string {
 	result := strings.ReplaceAll(msg, "\n* ", "\n*--* ")
 	result = strings.ReplaceAll(result, "**", "*")
+	//result = prettyFormatTables(result)
+	return result
+}
+
+func prettyFormatTables(input string) string {
+	// Regular expression to match tables (adapted from https://regex101.com/library/4T4tL6)
+	tableRegex := regexp.MustCompile(`\|(.+)\|\n\|[-:]+\|\n((\|.*\|\n)+)`)
+
+	// Find all tables in the input string and replace them with their pretty formatted version
+	result := tableRegex.ReplaceAllStringFunc(input, func(match string) string {
+		// Split the table into rows and columns
+		rows := strings.Split(strings.Trim(match, "\n"), "\n")
+		columns := make([][]string, len(rows))
+		for i, row := range rows {
+			columns[i] = strings.Split(strings.Trim(row, "| "), "|")
+		}
+
+		// Create a buffer to hold the pretty formatted table
+		buf := bytes.NewBuffer(nil)
+
+		// Use tablewriter to pretty format the table
+		table := tablewriter.NewWriter(buf)
+		table.SetHeader(columns[0])
+		table.SetBorders(tablewriter.Border{Left: true, Top: false, Right: true, Bottom: false})
+		table.SetCenterSeparator("|")
+		table.SetAutoWrapText(false)
+		for _, row := range columns[2:] {
+			table.Append(row)
+		}
+		table.Render()
+
+		// Return the pretty formatted table
+		return "```\n" + buf.String() + "```\n"
+	})
+
 	return result
 }
