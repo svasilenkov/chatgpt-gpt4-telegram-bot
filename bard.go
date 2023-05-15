@@ -201,3 +201,9 @@ func (c *BardChatbot) Reset() {
 	c.response_id = ""
 	c.choice_id = ""
 }
+
+func (c *BardChatbot) PrepareForTelegramMarkdown(msg string) string {
+	result := strings.ReplaceAll(msg, "\n* ", "\n*--* ")
+	result = strings.ReplaceAll(result, "**", "*")
+	return result
+}

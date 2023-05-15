@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -50,6 +49,7 @@ type User struct {
 }
 
 type Config struct {
+	DebugMode        string   `yaml:"debug_mode"`
 	TelegramToken    string   `yaml:"telegram_token"`
 	OpenAIKey        string   `yaml:"openai_api_key"`
 	BardSession      string   `yaml:"bard_session_id"`
@@ -72,18 +72,6 @@ func ReadConfig() (Config, error) {
 	return config, nil
 }
 
-func isDebuggerPresent() bool {
-	var pcs [10]uintptr
-	n := runtime.Callers(2, pcs[:])
-	for i := 0; i < n; i++ {
-		f := runtime.FuncForPC(pcs[i])
-		if f != nil && f.Name() == "runtime/debug.*" {
-			return true
-		}
-	}
-	return false
-}
-
 const (
 	StateDefault                = ""
 	StateWaitingForSystemPrompt = "waiting_for_system_prompt"
@@ -104,8 +92,8 @@ func main() {
 		log.Fatalf("Failed to create Telegram bot: %v", err)
 	}
 
-	if !isDebuggerPresent() {
-		//bot.Debug = true
+	if config.DebugMode == "1" {
+		bot.Debug = true
 	}
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 
@@ -292,7 +280,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 					fmt.Println(err)
 				}
 			} else {
-				response = strings.ReplaceAll(response, "\n* ", "\n-- ")
+				response = userSettingsMap[update.Message.Chat.ID].BardChatbot.PrepareForTelegramMarkdown(response)
 				msg := tgbotapi.NewMessage(update.Message.Chat.ID, response)
 				msg.ParseMode = "Markdown"
 				msg.ReplyToMessageID = update.Message.MessageID
@@ -303,7 +291,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 					msg.ReplyToMessageID = update.Message.MessageID
 					_, err := bot.Send(msg)
 					if err != nil {
-						log.Printf("Failed to send message as Markdown: %v", err)
+						log.Printf("Failed to send message: %v", err)
 					}
 				}
 			}
@@ -408,6 +396,13 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 		userSettingsMap[update.Message.Chat.ID] = User{
 			Model: GPT4Model,
 		}
+		// Reset the conversation history for the user
+		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{
+			{
+				Role:    "system",
+				Content: userSettingsMap[update.Message.Chat.ID].SystemPrompt,
+			},
+		}
 		mu.Unlock()
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT\\-4*\\.")
 		msg.ParseMode = "MarkdownV2"
@@ -416,6 +411,13 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 		mu.Lock()
 		userSettingsMap[update.Message.Chat.ID] = User{
 			Model: GPT35TurboModel,
+		}
+		// Reset the conversation history for the user
+		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{
+			{
+				Role:    "system",
+				Content: userSettingsMap[update.Message.Chat.ID].SystemPrompt,
+			},
 		}
 		mu.Unlock()
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT\\-3\\.5\\-turbo*\\.")
@@ -439,6 +441,13 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 		userSettingsMap[update.Message.Chat.ID] = User{
 			Model:       BardModel,
 			BardChatbot: chatbot,
+		}
+		// Reset the conversation history for the user
+		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{
+			{
+				Role:    "system",
+				Content: userSettingsMap[update.Message.Chat.ID].SystemPrompt,
+			},
 		}
 		mu.Unlock()
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, `Включена модель *Google Bard* \(`+telegramPrepareMarkdownMessage(chatbot.sessionBl)+`\)\.`)
