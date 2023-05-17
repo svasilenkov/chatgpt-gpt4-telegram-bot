@@ -5,6 +5,7 @@ go 1.19
 require (
 	github.com/0x9ef/openai-go v0.0.0-20230413055631-1a690b5e7fa0
 	github.com/PullRequestInc/go-gpt3 v1.1.14
+	github.com/bogdanfinn/tls-client v1.3.12
 	github.com/go-telegram-bot-api/telegram-bot-api v4.6.4+incompatible
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/samber/go-gpt-3-encoder v0.3.1
@@ -12,16 +13,22 @@ require (
 )
 
 require (
+	github.com/andybalholm/brotli v1.0.4 // indirect
+	github.com/bogdanfinn/fhttp v0.5.22 // indirect
+	github.com/bogdanfinn/utls v1.5.16 // indirect
 	github.com/dlclark/regexp2 v1.7.0 // indirect
 	github.com/go-playground/locales v0.14.0 // indirect
 	github.com/go-playground/universal-translator v0.18.0 // indirect
 	github.com/go-playground/validator/v10 v10.11.1 // indirect
+	github.com/klauspost/compress v1.15.12 // indirect
 	github.com/leodido/go-urn v1.2.1 // indirect
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/samber/lo v1.37.0 // indirect
+	github.com/tam7t/hpkp v0.0.0-20160821193359-2b70b4024ed5 // indirect
 	github.com/technoweenie/multipartstreamer v1.0.1 // indirect
-	golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3 // indirect
+	golang.org/x/crypto v0.1.0 // indirect
 	golang.org/x/exp v0.0.0-20220303212507-bbda1eaf7a17 // indirect
-	golang.org/x/sys v0.0.0-20220712014510-0a85c31ab51e // indirect
-	golang.org/x/text v0.3.7 // indirect
+	golang.org/x/net v0.5.0 // indirect
+	golang.org/x/sys v0.4.0 // indirect
+	golang.org/x/text v0.6.0 // indirect
 )

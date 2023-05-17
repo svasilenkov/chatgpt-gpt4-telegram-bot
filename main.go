@@ -55,6 +55,7 @@ type Config struct {
 	BardSession      string   `yaml:"bard_session_id"`
 	AllowedUsers     []string `yaml:"allowed_telegram_usernames"`
 	BardAllowedUsers []string `yaml:"bard_allowed_telegram_usernames"`
+	GPT4AllowedUsers []string `yaml:"gpt4_allowed_telegram_usernames"`
 }
 
 func ReadConfig() (Config, error) {
@@ -77,6 +78,8 @@ const (
 	StateWaitingForSystemPrompt = "waiting_for_system_prompt"
 )
 
+var openaiClient gpt3.Client
+
 func main() {
 	var err error
 	config, err = ReadConfig()
@@ -84,7 +87,12 @@ func main() {
 		log.Fatalf("Failed to read config: %v", err)
 	}
 	// Initialize the OpenAI API client
-	client := gpt3.NewClient(config.OpenAIKey, gpt3.WithTimeout(3*60*time.Second))
+
+	if DefaultModel == GPT4Model {
+		openaiClient = gpt3.NewClient(config.OpenAIKey, gpt3.WithBaseURL("http://127.0.0.1:8080/v1"))
+	} else {
+		openaiClient = gpt3.NewClient(config.OpenAIKey)
+	}
 
 	// Initialize the Telegram bot
 	bot, err := tgbotapi.NewBotAPI(config.TelegramToken)
@@ -113,9 +121,9 @@ func main() {
 				return
 			}
 			if update.Message.IsCommand() {
-				handleCommand(bot, update, client)
+				handleCommand(bot, update)
 			} else {
-				handleMessage(bot, update, client)
+				handleMessage(bot, update)
 			}
 		}(update)
 	}
@@ -213,7 +221,7 @@ func telegramPrepareMarkdownMessage(msg string) string {
 	return result
 }
 
-func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Client) {
+func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	if !contains(config.AllowedUsers, update.Message.From.UserName) {
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вам нельзя пользоваться этим ботом")
 		bot.Send(msg)
@@ -238,7 +246,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 		bot.Send(msg)
 		return
 	}
-	/*generatedText, err := generateTextWithGPT(client, update.Message.Text, update.Message.Chat.ID, model)
+	/*generatedText, err := generateTextWithGPT(update.Message.Text, update.Message.Chat.ID, model)
 	if err != nil {
 		log.Printf("Failed to generate text with GPT: %v", err)
 		return
@@ -296,7 +304,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 				}
 			}
 		} else {
-			generatedTextStream, err := generateTextStreamWithGPT(client, messageText, update.Message.Chat.ID, model)
+			generatedTextStream, err := generateTextStreamWithGPT(messageText, update.Message.Chat.ID, model)
 			if err != nil {
 				log.Printf("Failed to generate text stream with GPT: %v", err)
 				return
@@ -358,7 +366,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 	CompleteResponse(update.Message.Chat.ID)
 }
 
-func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Client) {
+func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	command := update.Message.Command()
 	commandArg := update.Message.CommandArguments()
 	switch command {
@@ -392,6 +400,12 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "История беседы очищена.")
 		bot.Send(msg)
 	case "gpt4":
+		if !contains(config.GPT4AllowedUsers, update.Message.From.UserName) {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вам нельзя пользоваться моделью *Google Bard*\\.")
+			msg.ParseMode = "MarkdownV2"
+			bot.Send(msg)
+			return
+		}
 		mu.Lock()
 		userSettingsMap[update.Message.Chat.ID] = User{
 			Model: GPT4Model,
@@ -403,6 +417,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 				Content: userSettingsMap[update.Message.Chat.ID].SystemPrompt,
 			},
 		}
+		openaiClient = gpt3.NewClient(config.OpenAIKey, gpt3.WithBaseURL("http://127.0.0.1:8080/v1"))
 		mu.Unlock()
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT\\-4*\\.")
 		msg.ParseMode = "MarkdownV2"
@@ -419,6 +434,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 				Content: userSettingsMap[update.Message.Chat.ID].SystemPrompt,
 			},
 		}
+		openaiClient = gpt3.NewClient(config.OpenAIKey)
 		mu.Unlock()
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT\\-3\\.5\\-turbo*\\.")
 		msg.ParseMode = "MarkdownV2"
@@ -464,7 +480,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 			model = DefaultModel
 		}
 		mu.Unlock()
-		generatedText, err := generateTextWithGPT(client, lastMessage.Content, update.Message.Chat.ID, model)
+		generatedText, err := generateTextWithGPT(lastMessage.Content, update.Message.Chat.ID, model)
 		if err != nil {
 			log.Printf("Failed to generate text with GPT: %v", err)
 			return
@@ -512,7 +528,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update, client gpt3.Cli
 	}
 }
 
-func generateTextWithGPT(client gpt3.Client, inputText string, chatID int64, model string) (string, error) {
+func generateTextWithGPT(inputText string, chatID int64, model string) (string, error) {
 	// Add the user's message to the conversation history
 	conversationHistory[chatID] = append(conversationHistory[chatID], gpt3.ChatCompletionRequestMessage{
 		Role:    "user",
@@ -552,7 +568,7 @@ func generateTextWithGPT(client gpt3.Client, inputText string, chatID int64, mod
 	ctx := context.Background()
 
 	// Call the OpenAI API
-	response, err := client.ChatCompletion(ctx, request)
+	response, err := openaiClient.ChatCompletion(ctx, request)
 	if err != nil {
 		return "", fmt.Errorf("failed to call OpenAI API: %w", err)
 	}
@@ -570,7 +586,7 @@ func generateTextWithGPT(client gpt3.Client, inputText string, chatID int64, mod
 	return generatedText, nil
 }
 
-func generateTextStreamWithGPT(client gpt3.Client, inputText string, chatID int64, model string) (chan string, error) {
+func generateTextStreamWithGPT(inputText string, chatID int64, model string) (chan string, error) {
 	// Add the user's message to the conversation history
 	conversationHistory[chatID] = append(conversationHistory[chatID], gpt3.ChatCompletionRequestMessage{
 		Role:    "user",
@@ -615,7 +631,7 @@ func generateTextStreamWithGPT(client gpt3.Client, inputText string, chatID int6
 	response := make(chan string)
 	// Call the OpenAI API
 	go func() {
-		err := client.ChatCompletionStream(ctx, request, func(completion *gpt3.ChatCompletionStreamResponse) {
+		err := openaiClient.ChatCompletionStream(ctx, request, func(completion *gpt3.ChatCompletionStreamResponse) {
 			log.Printf("Received completion: %v\n", completion)
 			response <- completion.Choices[0].Delta.Content
 			mu.Lock()
