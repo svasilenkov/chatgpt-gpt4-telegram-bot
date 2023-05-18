@@ -358,7 +358,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					continue
 				}
 				// Edit the message
-				if int(time.Since(startTime).Milliseconds()) < 1000 {
+				if int(time.Since(startTime).Milliseconds()) < 2000 {
 					continue
 				}
 				startTime = time.Now().UTC()
