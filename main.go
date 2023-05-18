@@ -17,8 +17,9 @@ import (
 
 	"gopkg.in/yaml.v2"
 
+	gpt3 "chat_bot/gpt3"
+
 	openai "github.com/0x9ef/openai-go"
-	"github.com/PullRequestInc/go-gpt3"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 	tokenizer "github.com/samber/go-gpt-3-encoder"
 )
@@ -88,8 +89,8 @@ func main() {
 		log.Fatalf("Failed to read config: %v", err)
 	}
 	// Initialize the OpenAI API client
-
-	openaiClientGPT4 = gpt3.NewClient(config.OpenAIKey, gpt3.WithBaseURL(os.Getenv("CUSTOM_OPENAI_API_ENDPOINT")+"/v1"))
+	customOpenAIAPIEndpoint := os.Getenv("CUSTOM_OPENAI_API_ENDPOINT")
+	openaiClientGPT4 = gpt3.NewClient(config.OpenAIKey, gpt3.WithBaseURL(customOpenAIAPIEndpoint+"/v1"))
 	openaiClient = gpt3.NewClient(config.OpenAIKey)
 
 	// Initialize the Telegram bot
@@ -208,13 +209,25 @@ func convertAudioToText(message *tgbotapi.Message, bot *tgbotapi.BotAPI) string 
 	return r.Text
 }
 
-func telegramPrepareMarkdownMessage(msg string) string {
+func telegramPrepareMarkdownMessageV1(msg string) string {
+	result := msg
+
+	if strings.Count(result, "```")%2 == 1 {
+		result += "\n```"
+	}
+	return result
+}
+
+func telegramPrepareMarkdownMessageV2(msg string) string {
 	result := msg
 
 	entities := []string{"_", "*", "[", "]", "(", ")", "~", "`", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!"}
 
 	for _, entity := range entities {
 		result = strings.ReplaceAll(result, entity, `\`+entity)
+	}
+	if strings.Count(result, "```")%2 == 1 {
+		result += "\n```"
 	}
 	return result
 }
@@ -320,7 +333,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 				}
 				if text == "" {
 					// Send the first message
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, generatedText+"...")
+					msg := tgbotapi.NewMessage(update.Message.Chat.ID, telegramPrepareMarkdownMessageV1(generatedText)+"...")
 					msg.ReplyToMessageID = update.Message.MessageID
 					msg_, err := bot.Send(msg)
 					if err != nil {
@@ -334,7 +347,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 				text += generatedText
 				// if the length of the text is too long, send a new message
 				if len(text) > 4096 {
-					text = generatedText
+					text = telegramPrepareMarkdownMessageV1(generatedText)
 					msg := tgbotapi.NewMessage(update.Message.Chat.ID, text)
 					msg.ReplyToMessageID = messageID
 					msg_, err := bot.Send(msg)
@@ -349,19 +362,23 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					continue
 				}
 				startTime = time.Now().UTC()
-				msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text+"...")
+				msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, telegramPrepareMarkdownMessageV1(text)+"...")
 				msg.ParseMode = "Markdown"
 				_, err := bot.Send(msg)
 				if err != nil {
 					log.Printf("Failed to edit message: %v", err)
+					msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text+"...")
+					_, err = bot.Send(msg)
 					continue
 				}
 			}
-			msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text)
+			msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, telegramPrepareMarkdownMessageV1(text))
 			msg.ParseMode = "Markdown"
 			_, err = bot.Send(msg)
 			if err != nil {
 				log.Printf("Failed to edit message: %v", err)
+				msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text)
+				_, err = bot.Send(msg)
 			}
 		}
 	}
@@ -472,7 +489,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			},
 		}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, `Включена модель *Google Bard* \(`+telegramPrepareMarkdownMessage(chatbot.sessionBl)+`\)\.`)
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, `Включена модель *Google Bard* \(`+telegramPrepareMarkdownMessageV2(chatbot.sessionBl)+`\)\.`)
 		msg.ParseMode = "MarkdownV2"
 		_, err := bot.Send(msg)
 		_ = err
@@ -638,7 +655,7 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 		MaxTokens:   maxTokens,
 		TopP:        1,
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(10*time.Minute))
 	mu.Lock()
 	user := userSettingsMap[chatID]
 	user.CurrentContext = &cancel

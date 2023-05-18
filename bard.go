@@ -208,6 +208,10 @@ func (c *BardChatbot) Reset() {
 func (c *BardChatbot) PrepareForTelegramMarkdown(msg string) string {
 	result := strings.ReplaceAll(msg, "\n* ", "\n*--* ")
 	result = strings.ReplaceAll(result, "**", "*")
+
+	if strings.Count(result, "```")%2 == 1 {
+		result += "\n```"
+	}
 	//result = prettyFormatTables(result)
 	return result
 }
