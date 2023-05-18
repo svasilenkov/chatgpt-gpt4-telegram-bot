@@ -78,6 +78,7 @@ const (
 	StateWaitingForSystemPrompt = "waiting_for_system_prompt"
 )
 
+var openaiClientGPT4 gpt3.Client
 var openaiClient gpt3.Client
 
 func main() {
@@ -88,11 +89,8 @@ func main() {
 	}
 	// Initialize the OpenAI API client
 
-	if DefaultModel == GPT4Model {
-		openaiClient = gpt3.NewClient(config.OpenAIKey, gpt3.WithBaseURL(os.Getenv("CUSTOM_OPENAI_API_ENDPOINT")+"/v1"))
-	} else {
-		openaiClient = gpt3.NewClient(config.OpenAIKey)
-	}
+	openaiClientGPT4 = gpt3.NewClient(config.OpenAIKey, gpt3.WithBaseURL(os.Getenv("CUSTOM_OPENAI_API_ENDPOINT")+"/v1"))
+	openaiClient = gpt3.NewClient(config.OpenAIKey)
 
 	// Initialize the Telegram bot
 	bot, err := tgbotapi.NewBotAPI(config.TelegramToken)
@@ -231,7 +229,11 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	state := userSettingsMap[update.Message.Chat.ID].State
 	model := userSettingsMap[update.Message.Chat.ID].Model
 	if model == "" {
-		model = DefaultModel
+		if contains(config.GPT4AllowedUsers, update.Message.From.UserName) {
+			model = GPT4Model
+		} else {
+			model = DefaultModel
+		}
 	}
 	mu.Unlock()
 	if state == StateWaitingForSystemPrompt {
@@ -379,8 +381,14 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 				Content: DefaultSystemPrompt,
 			},
 		}
+		model := ""
+		if contains(config.GPT4AllowedUsers, update.Message.From.UserName) {
+			model = GPT4Model
+		} else {
+			model = DefaultModel
+		}
 		userSettingsMap[update.Message.Chat.ID] = User{
-			Model:        DefaultModel,
+			Model:        model,
 			SystemPrompt: DefaultSystemPrompt,
 		}
 		mu.Unlock()
@@ -401,7 +409,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		bot.Send(msg)
 	case "gpt4":
 		if !contains(config.GPT4AllowedUsers, update.Message.From.UserName) {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вам нельзя пользоваться моделью *Google Bard*\\.")
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вам нельзя пользоваться моделью *OpenAI GPT\\-4*\\.")
 			msg.ParseMode = "MarkdownV2"
 			bot.Send(msg)
 			return
@@ -417,7 +425,6 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 				Content: userSettingsMap[update.Message.Chat.ID].SystemPrompt,
 			},
 		}
-		openaiClient = gpt3.NewClient(config.OpenAIKey, gpt3.WithBaseURL(os.Getenv("CUSTOM_OPENAI_API_ENDPOINT")+"/v1"))
 		mu.Unlock()
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT\\-4*\\.")
 		msg.ParseMode = "MarkdownV2"
@@ -434,7 +441,6 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 				Content: userSettingsMap[update.Message.Chat.ID].SystemPrompt,
 			},
 		}
-		openaiClient = gpt3.NewClient(config.OpenAIKey)
 		mu.Unlock()
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT\\-3\\.5\\-turbo*\\.")
 		msg.ParseMode = "MarkdownV2"
@@ -477,7 +483,11 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		conversationHistory[update.Message.Chat.ID] = conversationHistory[update.Message.Chat.ID][:len(conversationHistory[update.Message.Chat.ID])-2]
 		model := userSettingsMap[update.Message.Chat.ID].Model
 		if model == "" {
-			model = DefaultModel
+			if contains(config.GPT4AllowedUsers, update.Message.From.UserName) {
+				model = GPT4Model
+			} else {
+				model = DefaultModel
+			}
 		}
 		mu.Unlock()
 		generatedText, err := generateTextWithGPT(lastMessage.Content, update.Message.Chat.ID, model)
@@ -568,7 +578,12 @@ func generateTextWithGPT(inputText string, chatID int64, model string) (string, 
 	ctx := context.Background()
 
 	// Call the OpenAI API
-	response, err := openaiClient.ChatCompletion(ctx, request)
+	var response *gpt3.ChatCompletionResponse
+	if model == GPT4Model {
+		response, err = openaiClientGPT4.ChatCompletion(ctx, request)
+	} else {
+		response, err = openaiClient.ChatCompletion(ctx, request)
+	}
 	if err != nil {
 		return "", fmt.Errorf("failed to call OpenAI API: %w", err)
 	}
@@ -631,19 +646,36 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 	response := make(chan string)
 	// Call the OpenAI API
 	go func() {
-		err := openaiClient.ChatCompletionStream(ctx, request, func(completion *gpt3.ChatCompletionStreamResponse) {
-			log.Printf("Received completion: %v\n", completion)
-			response <- completion.Choices[0].Delta.Content
-			mu.Lock()
-			user := userSettingsMap[chatID]
-			user.CurrentMessageBuffer += completion.Choices[0].Delta.Content
-			userSettingsMap[chatID] = user
-			mu.Unlock()
-			if completion.Choices[0].FinishReason != "" {
-				close(response)
-				CompleteResponse(chatID)
-			}
-		})
+		var err error
+		if model == GPT4Model {
+			err = openaiClientGPT4.ChatCompletionStream(ctx, request, func(completion *gpt3.ChatCompletionStreamResponse) {
+				log.Printf("Received completion: %v\n", completion)
+				response <- completion.Choices[0].Delta.Content
+				mu.Lock()
+				user := userSettingsMap[chatID]
+				user.CurrentMessageBuffer += completion.Choices[0].Delta.Content
+				userSettingsMap[chatID] = user
+				mu.Unlock()
+				if completion.Choices[0].FinishReason != "" {
+					close(response)
+					CompleteResponse(chatID)
+				}
+			})
+		} else {
+			err = openaiClient.ChatCompletionStream(ctx, request, func(completion *gpt3.ChatCompletionStreamResponse) {
+				log.Printf("Received completion: %v\n", completion)
+				response <- completion.Choices[0].Delta.Content
+				mu.Lock()
+				user := userSettingsMap[chatID]
+				user.CurrentMessageBuffer += completion.Choices[0].Delta.Content
+				userSettingsMap[chatID] = user
+				mu.Unlock()
+				if completion.Choices[0].FinishReason != "" {
+					close(response)
+					CompleteResponse(chatID)
+				}
+			})
+		}
 		if err != nil {
 			// if response open, close it
 			if _, ok := <-response; ok {
