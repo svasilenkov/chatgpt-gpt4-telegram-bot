@@ -89,7 +89,7 @@ func main() {
 	// Initialize the OpenAI API client
 
 	if DefaultModel == GPT4Model {
-		openaiClient = gpt3.NewClient(config.OpenAIKey, gpt3.WithBaseURL("http://127.0.0.1:8080/v1"))
+		openaiClient = gpt3.NewClient(config.OpenAIKey, gpt3.WithBaseURL(os.Getenv("CUSTOM_OPENAI_API_ENDPOINT")+"/v1"))
 	} else {
 		openaiClient = gpt3.NewClient(config.OpenAIKey)
 	}
@@ -417,7 +417,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 				Content: userSettingsMap[update.Message.Chat.ID].SystemPrompt,
 			},
 		}
-		openaiClient = gpt3.NewClient(config.OpenAIKey, gpt3.WithBaseURL("http://127.0.0.1:8080/v1"))
+		openaiClient = gpt3.NewClient(config.OpenAIKey, gpt3.WithBaseURL(os.Getenv("CUSTOM_OPENAI_API_ENDPOINT")+"/v1"))
 		mu.Unlock()
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT\\-4*\\.")
 		msg.ParseMode = "MarkdownV2"
