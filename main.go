@@ -393,17 +393,21 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	case "start":
 		// Reset the conversation history for the user
 		mu.Lock()
-		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{
-			{
-				Role:    "system",
-				Content: DefaultSystemPrompt,
-			},
-		}
 		model := ""
 		if contains(config.GPT4AllowedUsers, update.Message.From.UserName) {
 			model = GPT4Model
 		} else {
 			model = DefaultModel
+		}
+		if model == GPT4BrowsingModel {
+			conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{}
+		} else {
+			conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{
+				{
+					Role:    "system",
+					Content: DefaultSystemPrompt,
+				},
+			}
 		}
 		userSettingsMap[update.Message.Chat.ID] = User{
 			Model:        model,
@@ -415,11 +419,16 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	case "new":
 		// Reset the conversation history for the user
 		mu.Lock()
-		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{
-			{
-				Role:    "system",
-				Content: userSettingsMap[update.Message.Chat.ID].SystemPrompt,
-			},
+		model := userSettingsMap[update.Message.Chat.ID].Model
+		if model == GPT4BrowsingModel {
+			conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{}
+		} else {
+			conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{
+				{
+					Role:    "system",
+					Content: userSettingsMap[update.Message.Chat.ID].SystemPrompt,
+				},
+			}
 		}
 		userSettingsMap[update.Message.Chat.ID].BardChatbot.Reset()
 		mu.Unlock()
@@ -459,12 +468,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			Model: GPT4BrowsingModel,
 		}
 		// Reset the conversation history for the user
-		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{
-			{
-				Role:    "system",
-				Content: userSettingsMap[update.Message.Chat.ID].SystemPrompt,
-			},
-		}
+		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{}
 		mu.Unlock()
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT 4 Browsing*\\.")
 		msg.ParseMode = "MarkdownV2"
@@ -505,12 +509,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			BardChatbot: chatbot,
 		}
 		// Reset the conversation history for the user
-		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{
-			{
-				Role:    "system",
-				Content: userSettingsMap[update.Message.Chat.ID].SystemPrompt,
-			},
-		}
+		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{}
 		mu.Unlock()
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, `Включена модель *Google Bard* \(`+telegramPrepareMarkdownMessageV2(chatbot.sessionBl)+`\)\.`)
 		msg.ParseMode = "MarkdownV2"
@@ -563,11 +562,13 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			Model:        userSettingsMap[update.Message.Chat.ID].Model,
 			SystemPrompt: commandArg,
 		}
-		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{
-			{
-				Role:    "system",
-				Content: commandArg,
-			},
+		if userSettingsMap[update.Message.Chat.ID].Model != GPT4BrowsingModel {
+			conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{
+				{
+					Role:    "system",
+					Content: commandArg,
+				},
+			}
 		}
 		mu.Unlock()
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, fmt.Sprintf("Установлен системный промпт: %s", commandArg))
@@ -587,7 +588,7 @@ func generateTextWithGPT(inputText string, chatID int64, model string) (string, 
 
 	temp := float32(0.7)
 	maxTokens := 4096
-	if model == GPT4Model {
+	if model == GPT4Model || model == GPT4BrowsingModel {
 		maxTokens = 8192
 	}
 	e, err := tokenizer.NewEncoder()
@@ -619,7 +620,7 @@ func generateTextWithGPT(inputText string, chatID int64, model string) (string, 
 
 	// Call the OpenAI API
 	var response *gpt3.ChatCompletionResponse
-	if model == GPT4Model {
+	if model == GPT4Model || model == GPT4BrowsingModel {
 		response, err = openaiClientGPT4.ChatCompletion(ctx, request)
 	} else {
 		response, err = openaiClient.ChatCompletion(ctx, request)
@@ -650,7 +651,7 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 
 	temp := float32(0.7)
 	maxTokens := 4096
-	if model == GPT4Model {
+	if model == GPT4Model || model == GPT4BrowsingModel {
 		maxTokens = 8192
 	}
 	e, err := tokenizer.NewEncoder()
@@ -687,7 +688,7 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 	// Call the OpenAI API
 	go func() {
 		var err error
-		if model == GPT4Model {
+		if model == GPT4Model || model == GPT4BrowsingModel {
 			err = openaiClientGPT4.ChatCompletionStream(ctx, request, func(completion *gpt3.ChatCompletionStreamResponse) {
 				log.Printf("Received completion: %v\n", completion)
 				response <- completion.Choices[0].Delta.Content
