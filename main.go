@@ -25,9 +25,10 @@ import (
 )
 
 const (
-	GPT4Model       = "gpt-4"
-	GPT35TurboModel = "gpt-3.5-turbo"
-	BardModel       = "bard"
+	GPT4Model         = "gpt-4"
+	GPT4BrowsingModel = "gpt-4-browsing"
+	GPT35TurboModel   = "gpt-3.5-turbo"
+	BardModel         = "bard"
 )
 
 const DefaultModel = GPT35TurboModel
@@ -426,7 +427,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		bot.Send(msg)
 	case "gpt4":
 		if !contains(config.GPT4AllowedUsers, update.Message.From.UserName) {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вам нельзя пользоваться моделью *OpenAI GPT\\-4*\\.")
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вам нельзя пользоваться моделью *OpenAI GPT 4*\\.")
 			msg.ParseMode = "MarkdownV2"
 			bot.Send(msg)
 			return
@@ -443,7 +444,29 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			},
 		}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT\\-4*\\.")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT 4*\\.")
+		msg.ParseMode = "MarkdownV2"
+		bot.Send(msg)
+	case "gpt4browsing":
+		if !contains(config.GPT4AllowedUsers, update.Message.From.UserName) {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вам нельзя пользоваться моделью *OpenAI GPT 4\\-Browsing*\\.")
+			msg.ParseMode = "MarkdownV2"
+			bot.Send(msg)
+			return
+		}
+		mu.Lock()
+		userSettingsMap[update.Message.Chat.ID] = User{
+			Model: GPT4BrowsingModel,
+		}
+		// Reset the conversation history for the user
+		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{
+			{
+				Role:    "system",
+				Content: userSettingsMap[update.Message.Chat.ID].SystemPrompt,
+			},
+		}
+		mu.Unlock()
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT 4 Browsing*\\.")
 		msg.ParseMode = "MarkdownV2"
 		bot.Send(msg)
 	case "gpt35":
@@ -459,7 +482,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			},
 		}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT\\-3\\.5\\-turbo*\\.")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT 3\\.5*\\.")
 		msg.ParseMode = "MarkdownV2"
 		bot.Send(msg)
 	case "bard":
