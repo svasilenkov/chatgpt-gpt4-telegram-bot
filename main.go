@@ -288,6 +288,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		}
 
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, messageText)
+		msg.DisableWebPagePreview = true
 		_, err := bot.Send(msg)
 		if err != nil {
 			log.Printf("Failed to send message: %v", err)
@@ -299,6 +300,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			if err != nil {
 				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка обращаения к Bard: "+err.Error())
 				msg.ReplyToMessageID = update.Message.MessageID
+				msg.DisableWebPagePreview = true
 				_, err := bot.Send(msg)
 				if err != nil {
 					fmt.Println(err)
@@ -313,6 +315,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					log.Printf("Failed to send message as Markdown: %v"+response, err)
 					msg := tgbotapi.NewMessage(update.Message.Chat.ID, response)
 					msg.ReplyToMessageID = update.Message.MessageID
+					msg.DisableWebPagePreview = true
 					_, err := bot.Send(msg)
 					if err != nil {
 						log.Printf("Failed to send message: %v", err)
@@ -334,8 +337,9 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 				}
 				if text == "" {
 					// Send the first message
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, telegramPrepareMarkdownMessageV1(generatedText)+"...")
+					msg := tgbotapi.NewMessage(update.Message.Chat.ID, generatedText+"...")
 					msg.ReplyToMessageID = update.Message.MessageID
+					msg.DisableWebPagePreview = true
 					msg_, err := bot.Send(msg)
 					if err != nil {
 						log.Printf("Failed to send message: %v", err)
@@ -346,12 +350,35 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					continue
 				}
 				text += generatedText
+				if int(time.Since(startTime).Milliseconds()) < 3000 {
+					continue
+				}
+				if model == GPT4BrowsingModel {
+					text = GPT4ReplaceMetadata(text)
+				}
+				startTime = time.Now().UTC()
 				// if the length of the text is too long, send a new message
-				if len(text) > 4096 {
-					text = telegramPrepareMarkdownMessageV1(generatedText)
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, text)
-					msg.ReplyToMessageID = messageID
-					msg_, err := bot.Send(msg)
+				if len(text) > 3900 {
+					text = text[:len(text)-len(generatedText)]
+					// edit the previous message
+					msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, telegramPrepareMarkdownMessageV1(text))
+					msg.ParseMode = "Markdown"
+					msg.DisableWebPagePreview = true
+					_, err := bot.Send(msg)
+					if err != nil {
+						log.Printf("Failed to edit message: %v", err)
+						msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text)
+						msg.DisableWebPagePreview = true
+						_, err = bot.Send(msg)
+						continue
+					}
+
+					// Create new message
+					text = generatedText
+					msgNew := tgbotapi.NewMessage(update.Message.Chat.ID, text+"...")
+					msgNew.ReplyToMessageID = messageID
+					msgNew.DisableWebPagePreview = true
+					msg_, err := bot.Send(msgNew)
 					if err != nil {
 						log.Printf("Failed to send message: %v", err)
 					}
@@ -359,26 +386,26 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					continue
 				}
 				// Edit the message
-				if int(time.Since(startTime).Milliseconds()) < 2000 {
-					continue
-				}
-				startTime = time.Now().UTC()
 				msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, telegramPrepareMarkdownMessageV1(text)+"...")
 				msg.ParseMode = "Markdown"
+				msg.DisableWebPagePreview = true
 				_, err := bot.Send(msg)
 				if err != nil {
 					log.Printf("Failed to edit message: %v", err)
 					msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text+"...")
+					msg.DisableWebPagePreview = true
 					_, err = bot.Send(msg)
 					continue
 				}
 			}
 			msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, telegramPrepareMarkdownMessageV1(text))
 			msg.ParseMode = "Markdown"
+			msg.DisableWebPagePreview = true
 			_, err = bot.Send(msg)
 			if err != nil {
 				log.Printf("Failed to edit message: %v", err)
 				msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text)
+				msg.DisableWebPagePreview = true
 				_, err = bot.Send(msg)
 			}
 		}
