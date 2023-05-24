@@ -350,11 +350,11 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					continue
 				}
 				text += generatedText
+				if model == GPT4BrowsingModel {
+					text = GPT4ReplaceMetadata(text, false)
+				}
 				if int(time.Since(startTime).Milliseconds()) < 3000 {
 					continue
-				}
-				if model == GPT4BrowsingModel {
-					text = GPT4ReplaceMetadata(text)
 				}
 				startTime = time.Now().UTC()
 				// if the length of the text is too long, send a new message
@@ -725,8 +725,13 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 				userSettingsMap[chatID] = user
 				mu.Unlock()
 				if completion.Choices[0].FinishReason != "" {
-					close(response)
+					mu.Lock()
+					user := userSettingsMap[chatID]
+					user.CurrentMessageBuffer = GPT4ReplaceMetadata(user.CurrentMessageBuffer, true)
+					userSettingsMap[chatID] = user
+					mu.Unlock()
 					CompleteResponse(chatID)
+					close(response)
 				}
 			})
 		} else {
@@ -739,8 +744,13 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 				userSettingsMap[chatID] = user
 				mu.Unlock()
 				if completion.Choices[0].FinishReason != "" {
-					close(response)
+					mu.Lock()
+					user := userSettingsMap[chatID]
+					user.CurrentMessageBuffer = GPT4ReplaceMetadata(user.CurrentMessageBuffer, true)
+					userSettingsMap[chatID] = user
+					mu.Unlock()
 					CompleteResponse(chatID)
+					close(response)
 				}
 			})
 		}
@@ -760,23 +770,26 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 func CompleteResponse(chatID int64) {
 	mu.Lock()
 	user := userSettingsMap[chatID]
+	generatedText := user.CurrentMessageBuffer
+	user.CurrentMessageBuffer = ""
+	userSettingsMap[chatID] = user
+
+	// Get the generated text
+	generatedText = strings.TrimSpace(generatedText)
+
+	// Add the AI's response to the conversation history
+	if generatedText != "" {
+		conversationHistory[chatID] = append(conversationHistory[chatID], gpt3.ChatCompletionRequestMessage{
+			Role:    "assistant",
+			Content: generatedText,
+		})
+	}
+
 	if user.CurrentContext == nil {
 		mu.Unlock()
 		return
 	}
 	(*user.CurrentContext)()
 	user.CurrentContext = nil
-	generatedText := user.CurrentMessageBuffer
-	user.CurrentMessageBuffer = ""
-	userSettingsMap[chatID] = user
 	mu.Unlock()
-
-	// Get the generated text
-	generatedText = strings.TrimSpace(generatedText)
-
-	// Add the AI's response to the conversation history
-	conversationHistory[chatID] = append(conversationHistory[chatID], gpt3.ChatCompletionRequestMessage{
-		Role:    "assistant",
-		Content: generatedText,
-	})
 }
