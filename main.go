@@ -90,7 +90,7 @@ func main() {
 		log.Fatalf("Failed to read config: %v", err)
 	}
 	// Initialize the OpenAI API client
-	customOpenAIAPIEndpoint := os.Getenv("CUSTOM_OPENAI_API_ENDPOINT"
+	customOpenAIAPIEndpoint := os.Getenv("CUSTOM_OPENAI_API_ENDPOINT")
 	openaiClientGPT4 = gpt3.NewClient(config.OpenAIKey, gpt3.WithBaseURL(customOpenAIAPIEndpoint+"/v1"))
 	openaiClient = gpt3.NewClient(config.OpenAIKey)
 
