@@ -90,7 +90,7 @@ func main() {
 		log.Fatalf("Failed to read config: %v", err)
 	}
 	// Initialize the OpenAI API client
-	customOpenAIAPIEndpoint := os.Getenv("CUSTOM_OPENAI_API_ENDPOINT")
+	customOpenAIAPIEndpoint := os.Getenv("CUSTOM_OPENAI_API_ENDPOINT"
 	openaiClientGPT4 = gpt3.NewClient(config.OpenAIKey, gpt3.WithBaseURL(customOpenAIAPIEndpoint+"/v1"))
 	openaiClient = gpt3.NewClient(config.OpenAIKey)
 
@@ -213,9 +213,9 @@ func convertAudioToText(message *tgbotapi.Message, bot *tgbotapi.BotAPI) string 
 func telegramPrepareMarkdownMessageV1(msg string) string {
 	result := msg
 
-	if strings.Count(result, "```")%2 == 1 {
-		result += "\n```"
-	}
+	//if strings.Count(result, "```")%2 == 1 {
+	//	result += "\n```"
+	//}
 	return result
 }
 
@@ -331,13 +331,19 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			text := ""
 			messageID := 0
 			startTime := time.Now().UTC()
+			messagesCount := 0
 			for generatedText := range generatedTextStream {
 				if generatedText == "" {
 					continue
 				}
 				if text == "" {
 					// Send the first message
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, generatedText+"...")
+					messagesCount++
+					msgText := generatedText
+					if model == GPT4BrowsingModel {
+						msgText = GPT4BrowsingReplaceMetadata(msgText, false)
+					}
+					msg := tgbotapi.NewMessage(update.Message.Chat.ID, msgText+"...")
 					msg.ReplyToMessageID = update.Message.MessageID
 					msg.DisableWebPagePreview = true
 					msg_, err := bot.Send(msg)
@@ -350,32 +356,35 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					continue
 				}
 				text += generatedText
-				if model == GPT4BrowsingModel {
-					text = GPT4ReplaceMetadata(text, false)
-				}
 				if int(time.Since(startTime).Milliseconds()) < 3000 {
 					continue
 				}
 				startTime = time.Now().UTC()
+
+				msgText := text
+				if model == GPT4BrowsingModel {
+					msgText = GPT4BrowsingReplaceMetadata(msgText, false)
+				}
 				// if the length of the text is too long, send a new message
-				if len(text) > 3900 {
-					text = text[:len(text)-len(generatedText)]
+				if len(msgText) > messagesCount*4000 {
 					// edit the previous message
-					msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, telegramPrepareMarkdownMessageV1(text))
+					msgText2 := msgText[(messagesCount-1)*4000 : messagesCount*4000]
+					msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, telegramPrepareMarkdownMessageV1(msgText2))
 					msg.ParseMode = "Markdown"
 					msg.DisableWebPagePreview = true
 					_, err := bot.Send(msg)
 					if err != nil {
 						log.Printf("Failed to edit message: %v", err)
-						msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text)
+						msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, msgText)
 						msg.DisableWebPagePreview = true
 						_, err = bot.Send(msg)
 						continue
 					}
 
 					// Create new message
-					text = generatedText
-					msgNew := tgbotapi.NewMessage(update.Message.Chat.ID, text+"...")
+					messagesCount++
+					msgText = msgText[(messagesCount-1)*4000:]
+					msgNew := tgbotapi.NewMessage(update.Message.Chat.ID, msgText+"...")
 					msgNew.ReplyToMessageID = messageID
 					msgNew.DisableWebPagePreview = true
 					msg_, err := bot.Send(msgNew)
@@ -385,26 +394,35 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					messageID = msg_.MessageID
 					continue
 				}
+
 				// Edit the message
-				msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, telegramPrepareMarkdownMessageV1(text)+"...")
+				if messagesCount > 1 {
+					msgText = msgText[(messagesCount-1)*4000:]
+				}
+				msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, telegramPrepareMarkdownMessageV1(msgText)+"...")
 				msg.ParseMode = "Markdown"
 				msg.DisableWebPagePreview = true
 				_, err := bot.Send(msg)
 				if err != nil {
 					log.Printf("Failed to edit message: %v", err)
-					msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text+"...")
+					msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, msgText+"...")
 					msg.DisableWebPagePreview = true
 					_, err = bot.Send(msg)
 					continue
 				}
 			}
-			msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, telegramPrepareMarkdownMessageV1(text))
+			msgText := text
+			if model == GPT4BrowsingModel {
+				msgText = GPT4BrowsingReplaceMetadata(msgText, false)
+			}
+			msgText = msgText[(messagesCount-1)*4000:]
+			msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, telegramPrepareMarkdownMessageV1(msgText))
 			msg.ParseMode = "Markdown"
 			msg.DisableWebPagePreview = true
 			_, err = bot.Send(msg)
 			if err != nil {
 				log.Printf("Failed to edit message: %v", err)
-				msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text)
+				msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, msgText)
 				msg.DisableWebPagePreview = true
 				_, err = bot.Send(msg)
 			}
@@ -475,8 +493,8 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		// Reset the conversation history for the user
 		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{
 			{
-				Role:    "system",
-				Content: userSettingsMap[update.Message.Chat.ID].SystemPrompt,
+				//Role:    "system",
+				//Content: userSettingsMap[update.Message.Chat.ID].SystemPrompt,
 			},
 		}
 		mu.Unlock()
@@ -727,7 +745,9 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 				if completion.Choices[0].FinishReason != "" {
 					mu.Lock()
 					user := userSettingsMap[chatID]
-					user.CurrentMessageBuffer = GPT4ReplaceMetadata(user.CurrentMessageBuffer, true)
+					if user.Model == GPT4BrowsingModel {
+						user.CurrentMessageBuffer = GPT4BrowsingReplaceMetadata(user.CurrentMessageBuffer, true)
+					}
 					userSettingsMap[chatID] = user
 					mu.Unlock()
 					CompleteResponse(chatID)
@@ -746,7 +766,9 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 				if completion.Choices[0].FinishReason != "" {
 					mu.Lock()
 					user := userSettingsMap[chatID]
-					user.CurrentMessageBuffer = GPT4ReplaceMetadata(user.CurrentMessageBuffer, true)
+					if user.Model == GPT4BrowsingModel {
+						user.CurrentMessageBuffer = GPT4BrowsingReplaceMetadata(user.CurrentMessageBuffer, true)
+					}
 					userSettingsMap[chatID] = user
 					mu.Unlock()
 					CompleteResponse(chatID)

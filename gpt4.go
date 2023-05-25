@@ -49,6 +49,9 @@ type Block struct {
 }
 
 func ReplaceSourcesWithUrls(text string, urls []string) string {
+	if len(urls) == 0 {
+		return text
+	}
 	// Find all "【num†source】" in the text
 	re := regexp.MustCompile(`【\d+†source】`)
 	matches := re.FindAllString(text, -1)
@@ -98,80 +101,59 @@ func ReplaceClickWithUrl(text string, urls []string) string {
 	return text
 }
 
-func GPT4ReplaceMetadata(inputText string, cleanCodeBlocks bool) string {
-	// Find all blocks with CODE_METADATA
+func GPT4BrowsingReplaceMetadata(inputText string, cleanCodeBlocks bool) string {
+	if strings.Count(inputText, "///text_message") != strings.Count(inputText, "\n"+`%%%TEXT_METADATA:`) {
+		inputText += "\n" + `%%%TEXT_METADATA:{}%%%` + "\n" + `\\\`
+	}
+	if strings.Count(inputText, "///") != strings.Count(inputText, "\n"+`\\\`) {
+		inputText += "\n" + `\\\`
+	}
+
 	inputText = strings.ReplaceAll(inputText, "\n", "%NEW_LINE%")
 
-	re := regexp.MustCompile("```(.+?)%%%CODE_METADATA:(.+?)%%%```")
+	// Find all blocks with CODE_METADATA
+	re := regexp.MustCompile(`\/\/\/` + "code_message%NEW_LINE%%%%METADATA:(.+?)%%%(.*?)%NEW_LINE%" + `\\\\\\`)
 	blockMatches := re.FindAllStringSubmatch(inputText, -1)
 
 	// Parse each block's CODE_METADATA
-	var blocks []Block
-	for i, blockMatch := range blockMatches {
-		inputText = strings.Replace(inputText, blockMatch[0], "///CODE_BLOCK_PLACEHOLDER"+fmt.Sprint(i)+"///", 1)
-		metadataString := blockMatch[2]
-		metadata := Metadata{}
+	for _, blockMatch := range blockMatches {
+		metadataString := blockMatch[1]
 		var urlList []string
+		var metadata Metadata
 		err := json.Unmarshal([]byte(metadataString), &metadata)
 		if err != nil {
-			panic(err)
+			//panic(err)
 		}
 		for _, item := range metadata.CiteMetadata.MetaDataList {
 			urlList = append(urlList, item.Url)
 		}
-		blocks = append(blocks, Block{
-			Text:    blockMatch[1],
-			UrlList: urlList,
-		})
-	}
-
-	// Replace click(number) with corresponding URL
-	for i, block := range blocks {
-		blocks[i].Text = ReplaceClickWithUrl(block.Text, block.UrlList)
-	}
-
-	// Remove {{{...}}}
-	for i, block := range blocks {
-		blocks[i].Text = strings.ReplaceAll(block.Text, "%%%CODE_METADATA:(.*?)%%%", "")
-	}
-
-	for i, block := range blocks {
-		if cleanCodeBlocks || strings.Contains(block.Text, "quote(") {
-			inputText = strings.Replace(inputText, "///CODE_BLOCK_PLACEHOLDER"+fmt.Sprint(i)+"///", "", 1)
+		text := ReplaceClickWithUrl(blockMatch[2], urlList)
+		if cleanCodeBlocks || strings.Contains(text, "quote(") {
+			inputText = strings.Replace(inputText, blockMatch[0], "", 1)
 		} else {
-			inputText = strings.Replace(inputText, "///CODE_BLOCK_PLACEHOLDER"+fmt.Sprint(i)+"///", block.Text, 1)
+			inputText = strings.Replace(inputText, blockMatch[0], text+"\n", 1)
 		}
 	}
 
-	re = regexp.MustCompile("%%%TEXT_METADATA:(.+?)%%%")
+	re = regexp.MustCompile(`\/\/\/` + "text_message%NEW_LINE%(.*?)%%%TEXT_METADATA:(.+?)%%%%NEW_LINE%" + `\\\\\\`)
 	blockMatches = re.FindAllStringSubmatch(inputText, -1)
 
 	// Parse each block's TEXT_METADATA
-	blocks = []Block{}
-	var urlList []string
-	for i, blockMatch := range blockMatches {
-		inputText = strings.Replace(inputText, blockMatch[0], "///TEXT_BLOCK_PLACEHOLDER"+fmt.Sprint(i)+"///", 1)
-		metadataString := blockMatch[1]
-		metadata := Metadata{}
+	for _, blockMatch := range blockMatches {
+		metadataString := blockMatch[2]
 
+		var metadata Metadata
 		err := json.Unmarshal([]byte(metadataString), &metadata)
 		if err != nil {
-			fmt.Println(metadataString)
-			panic(err)
+			//fmt.Println(metadataString)
+			//panic(err)
 		}
+		var urlList []string
 		for _, item := range metadata.Citations {
 			urlList = append(urlList, item.Metadata.Url)
 		}
-		blocks = append(blocks, Block{
-			Text:    blockMatch[1],
-			UrlList: urlList,
-		})
-	}
-
-	inputText = ReplaceSourcesWithUrls(inputText, urlList)
-
-	for i, _ := range blocks {
-		inputText = strings.Replace(inputText, "///TEXT_BLOCK_PLACEHOLDER"+fmt.Sprint(i)+"///", "", 1)
+		text := ReplaceSourcesWithUrls(blockMatch[1], urlList)
+		inputText = strings.Replace(inputText, blockMatch[0], text+"\n", 1)
 	}
 
 	inputText = strings.ReplaceAll(inputText, "%NEW_LINE%", "\n")
