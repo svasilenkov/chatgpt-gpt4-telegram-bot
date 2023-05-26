@@ -83,6 +83,20 @@ const (
 var openaiClientGPT4 gpt3.Client
 var openaiClient gpt3.Client
 
+func substr(input string, start int, length int) string {
+	asRunes := []rune(input)
+
+	if start >= len(asRunes) {
+		return ""
+	}
+
+	if start+length > len(asRunes) {
+		length = len(asRunes) - start
+	}
+
+	return string(asRunes[start : start+length])
+}
+
 func main() {
 	var err error
 	config, err = ReadConfig()
@@ -332,6 +346,8 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			messageID := 0
 			startTime := time.Now().UTC()
 			messagesCount := 0
+			messageIDs := make([]int, 0)
+			messages := make([]string, 0)
 			for generatedText := range generatedTextStream {
 				if generatedText == "" {
 					continue
@@ -343,7 +359,8 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					if model == GPT4BrowsingModel {
 						msgText = GPT4BrowsingReplaceMetadata(msgText, false)
 					}
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, msgText+"...")
+					msgText2 := strings.TrimSpace(msgText) + "..."
+					msg := tgbotapi.NewMessage(update.Message.Chat.ID, msgText2)
 					msg.ReplyToMessageID = update.Message.MessageID
 					msg.DisableWebPagePreview = true
 					msg_, err := bot.Send(msg)
@@ -351,6 +368,8 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 						log.Printf("Failed to send message: %v", err)
 					}
 					messageID = msg_.MessageID
+					messageIDs = append(messageIDs, messageID)
+					messages = append(messages, msgText2)
 					fmt.Println("Message ID: ", msg_.MessageID)
 					text += generatedText
 					continue
@@ -368,63 +387,118 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 				// if the length of the text is too long, send a new message
 				if len(msgText) > messagesCount*4000 {
 					// edit the previous message
-					msgText2 := msgText[(messagesCount-1)*4000 : messagesCount*4000]
-					msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, telegramPrepareMarkdownMessageV1(msgText2))
-					msg.ParseMode = "Markdown"
-					msg.DisableWebPagePreview = true
-					_, err := bot.Send(msg)
-					if err != nil {
-						log.Printf("Failed to edit message: %v", err)
-						msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, msgText)
+					msgText2 := substr(msgText, (messagesCount-1)*4000, 4000)
+					msgText3 := telegramPrepareMarkdownMessageV1(msgText2)
+					if msgText3 != messages[messagesCount-1] {
+						msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, msgText3)
+						msg.ParseMode = "Markdown"
 						msg.DisableWebPagePreview = true
-						_, err = bot.Send(msg)
-						continue
+						_, err := bot.Send(msg)
+						if err != nil {
+							log.Printf("Failed to edit message: %v", err)
+							msgText3 = strings.TrimSpace(msgText2) + "..."
+							if msgText3 != messages[messagesCount-1] {
+								msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, msgText3)
+								msg.DisableWebPagePreview = true
+								_, err = bot.Send(msg)
+								messages[messagesCount-1] = msgText3
+							}
+						}
 					}
+					messages[messagesCount-1] = msgText3
 
 					// Create new message
 					messagesCount++
-					msgText = msgText[(messagesCount-1)*4000:]
-					msgNew := tgbotapi.NewMessage(update.Message.Chat.ID, msgText+"...")
+					msgText2 = substr(msgText, (messagesCount-1)*4000, 4000)
+					msgText3 = strings.TrimSpace(telegramPrepareMarkdownMessageV1(msgText2)) + "..."
+					msgNew := tgbotapi.NewMessage(update.Message.Chat.ID, msgText3)
+					msgNew.ParseMode = "Markdown"
 					msgNew.ReplyToMessageID = messageID
 					msgNew.DisableWebPagePreview = true
 					msg_, err := bot.Send(msgNew)
 					if err != nil {
 						log.Printf("Failed to send message: %v", err)
+						msgText3 = strings.TrimSpace(msgText2) + "..."
+						msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, msgText3)
+						msg.DisableWebPagePreview = true
+						msg_, err = bot.Send(msg)
+						messageID = msg_.MessageID
+						messageIDs = append(messageIDs, messageID)
+						messages = append(messages, msgText3)
+						continue
 					}
 					messageID = msg_.MessageID
+					messageIDs = append(messageIDs, messageID)
+					messages = append(messages, msgText2)
 					continue
 				}
 
-				// Edit the message
-				if messagesCount > 1 {
-					msgText = msgText[(messagesCount-1)*4000:]
-				}
-				msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, telegramPrepareMarkdownMessageV1(msgText)+"...")
-				msg.ParseMode = "Markdown"
-				msg.DisableWebPagePreview = true
-				_, err := bot.Send(msg)
-				if err != nil {
-					log.Printf("Failed to edit message: %v", err)
-					msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, msgText+"...")
+				// Update all messages
+				for i, messageID := range messageIDs {
+					msgText2 := ""
+					msgText2 = substr(msgText, i*4000, 4000)
+					msgText3 := strings.TrimSpace(telegramPrepareMarkdownMessageV1(msgText2))
+					if i == len(messageIDs)-1 {
+						msgText3 += "..."
+					}
+					if msgText3 == messages[i] {
+						continue
+					}
+					msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, msgText3)
+					msg.ParseMode = "Markdown"
 					msg.DisableWebPagePreview = true
 					_, err = bot.Send(msg)
-					continue
+					if err != nil {
+						log.Printf("Failed to edit message (Markdown): %v, message: %s", err, msgText2)
+						msgText3 = strings.TrimSpace(msgText2)
+						if i == len(messageIDs)-1 {
+							msgText3 += "..."
+						}
+						if msgText3 == messages[i] {
+							continue
+						}
+						msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, msgText3)
+						msg.DisableWebPagePreview = true
+						_, err = bot.Send(msg)
+						if err != nil {
+							log.Printf("Failed to edit message (Plaintext): %v, message: %s", err, msgText2)
+						}
+						messages[i] = msgText3
+					}
+					messages[i] = msgText3
 				}
+				continue
 			}
 			msgText := text
+			//fmt.Println("Whole text:\n\n", msgText)
 			if model == GPT4BrowsingModel {
 				msgText = GPT4BrowsingReplaceMetadata(msgText, false)
 			}
-			msgText = msgText[(messagesCount-1)*4000:]
-			msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, telegramPrepareMarkdownMessageV1(msgText))
-			msg.ParseMode = "Markdown"
-			msg.DisableWebPagePreview = true
-			_, err = bot.Send(msg)
-			if err != nil {
-				log.Printf("Failed to edit message: %v", err)
-				msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, msgText)
+			//fmt.Println("Whole message:\n\n", msgText)
+			// Update all messages
+			for i, messageID := range messageIDs {
+				text = substr(msgText, i*4000, 4000)
+				msgText3 := strings.TrimSpace(telegramPrepareMarkdownMessageV1(text))
+				if msgText3 == messages[i] {
+					continue
+				}
+				msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, msgText3)
+				msg.ParseMode = "Markdown"
 				msg.DisableWebPagePreview = true
 				_, err = bot.Send(msg)
+				if err != nil {
+					log.Printf("Failed to edit message (Markdown): %v, message: %s", err, text)
+					msgText3 = strings.TrimSpace(text)
+					if msgText3 == messages[i] {
+						continue
+					}
+					msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text)
+					msg.DisableWebPagePreview = true
+					_, err = bot.Send(msg)
+					if err != nil {
+						log.Printf("Failed to edit message (Plaintext): %v, message: %s", err, text)
+					}
+				}
 			}
 		}
 	}
@@ -444,7 +518,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		} else {
 			model = DefaultModel
 		}
-		if model == GPT4BrowsingModel {
+		if model == GPT4Model || model == GPT4BrowsingModel {
 			conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{}
 		} else {
 			conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{
@@ -465,15 +539,17 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		// Reset the conversation history for the user
 		mu.Lock()
 		model := userSettingsMap[update.Message.Chat.ID].Model
-		if model == GPT4BrowsingModel {
+		if model == GPT4Model || model == GPT4BrowsingModel {
 			conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{}
 		} else {
-			conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{
-				{
-					Role:    "system",
-					Content: userSettingsMap[update.Message.Chat.ID].SystemPrompt,
-				},
-			}
+			conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{}
+			/*
+				conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{
+					{
+						Role:    "system",
+						Content: userSettingsMap[update.Message.Chat.ID].SystemPrompt,
+					},
+				}*/
 		}
 		userSettingsMap[update.Message.Chat.ID].BardChatbot.Reset()
 		mu.Unlock()
@@ -491,12 +567,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			Model: GPT4Model,
 		}
 		// Reset the conversation history for the user
-		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{
-			{
-				//Role:    "system",
-				//Content: userSettingsMap[update.Message.Chat.ID].SystemPrompt,
-			},
-		}
+		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{}
 		mu.Unlock()
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT 4*\\.")
 		msg.ParseMode = "MarkdownV2"
@@ -607,7 +678,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			Model:        userSettingsMap[update.Message.Chat.ID].Model,
 			SystemPrompt: commandArg,
 		}
-		if userSettingsMap[update.Message.Chat.ID].Model != GPT4BrowsingModel {
+		if userSettingsMap[update.Message.Chat.ID].Model != GPT4Model && userSettingsMap[update.Message.Chat.ID].Model != GPT4BrowsingModel {
 			conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{
 				{
 					Role:    "system",

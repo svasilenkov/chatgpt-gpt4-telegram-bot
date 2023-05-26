@@ -61,7 +61,7 @@ func ReplaceSourcesWithUrls(text string, urls []string) string {
 	for _, match := range matches {
 		// Check if number is within urls array bounds
 		if index < len(urls) && index >= 0 {
-			text = regexp.MustCompile(match).ReplaceAllString(text, " __["+fmt.Sprint(index+1)+"]("+urls[index]+")__")
+			text = regexp.MustCompile(match).ReplaceAllString(text, " ["+fmt.Sprint(index+1)+"]("+urls[index]+")")
 		} else {
 			fmt.Println("Number in 'click' is out of URLs array bounds")
 		}
@@ -92,7 +92,8 @@ func ReplaceClickWithUrl(text string, urls []string) string {
 		// Check if number is within urls array bounds
 		if numInt < len(urls) && numInt >= 0 {
 			// Replace "number" with corresponding url
-			text = regexp.MustCompile(`click\(`+num+`\)`).ReplaceAllString(text, `click("[`+urls[numInt]+`](`+urls[numInt]+`)")`)
+			//text = regexp.MustCompile(`click\(`+num+`\)`).ReplaceAllString(text, `click("[`+urls[numInt]+`](`+urls[numInt]+`)")`)
+			text = regexp.MustCompile(`click\(`+num+`\)`).ReplaceAllString(text, `click("`+urls[numInt]+`")`)
 		} else {
 			fmt.Println("Number in 'click' is out of URLs array bounds")
 		}
@@ -118,6 +119,7 @@ func GPT4BrowsingReplaceMetadata(inputText string, cleanCodeBlocks bool) string 
 	// Parse each block's CODE_METADATA
 	for _, blockMatch := range blockMatches {
 		metadataString := blockMatch[1]
+
 		var urlList []string
 		var metadata Metadata
 		err := json.Unmarshal([]byte(metadataString), &metadata)
@@ -153,9 +155,10 @@ func GPT4BrowsingReplaceMetadata(inputText string, cleanCodeBlocks bool) string 
 			urlList = append(urlList, item.Metadata.Url)
 		}
 		text := ReplaceSourcesWithUrls(blockMatch[1], urlList)
-		inputText = strings.Replace(inputText, blockMatch[0], text+"\n", 1)
+		inputText = strings.Replace(inputText, blockMatch[0], text, 1)
 	}
 
 	inputText = strings.ReplaceAll(inputText, "%NEW_LINE%", "\n")
+	fmt.Println(inputText)
 	return inputText
 }
