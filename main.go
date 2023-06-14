@@ -27,7 +27,7 @@ import (
 const (
 	GPT4Model         = "gpt-4"
 	GPT4BrowsingModel = "gpt-4-browsing"
-	GPT35TurboModel   = "gpt-3.5-turbo"
+	GPT35TurboModel   = "gpt-3.5-turbo-0613"
 	BardModel         = "bard"
 )
 
