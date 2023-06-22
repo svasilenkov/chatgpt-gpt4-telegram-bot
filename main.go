@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -25,10 +26,11 @@ import (
 )
 
 const (
-	GPT4Model         = "gpt-4"
-	GPT4BrowsingModel = "gpt-4-browsing"
-	GPT35TurboModel   = "gpt-3.5-turbo-0613"
-	BardModel         = "bard"
+	GPT4Model          = "gpt-4"
+	GPT4BrowsingModel  = "gpt-4-browsing"
+	GPT35TurboModel    = "gpt-3.5-turbo-0613"
+	GPT35TurboModel16k = "gpt-3.5-turbo-16k"
+	BardModel          = "bard"
 )
 
 const DefaultModel = GPT35TurboModel
@@ -227,9 +229,11 @@ func convertAudioToText(message *tgbotapi.Message, bot *tgbotapi.BotAPI) string 
 func telegramPrepareMarkdownMessageV1(msg string) string {
 	result := msg
 
-	//if strings.Count(result, "```")%2 == 1 {
-	//	result += "\n```"
-	//}
+	entities := []string{"_"}
+
+	for _, entity := range entities {
+		result = strings.ReplaceAll(result, entity, `\`+entity)
+	}
 	return result
 }
 
@@ -258,7 +262,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	model := userSettingsMap[update.Message.Chat.ID].Model
 	if model == "" {
 		if contains(config.GPT4AllowedUsers, update.Message.From.UserName) {
-			model = GPT4Model
+			model = GPT35TurboModel16k
 		} else {
 			model = DefaultModel
 		}
@@ -514,7 +518,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		mu.Lock()
 		model := ""
 		if contains(config.GPT4AllowedUsers, update.Message.From.UserName) {
-			model = GPT4Model
+			model = GPT35TurboModel16k
 		} else {
 			model = DefaultModel
 		}
@@ -639,7 +643,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		model := userSettingsMap[update.Message.Chat.ID].Model
 		if model == "" {
 			if contains(config.GPT4AllowedUsers, update.Message.From.UserName) {
-				model = GPT4Model
+				model = GPT35TurboModel16k
 			} else {
 				model = DefaultModel
 			}
@@ -764,37 +768,44 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 		Role:    "user",
 		Content: inputText,
 	})
+	conversationFunctions := []gpt3.ChatCompletionRequestFunction{}
 
-	temp := float32(0.7)
-	maxTokens := 4096
-	if model == GPT4Model || model == GPT4BrowsingModel {
-		maxTokens = 8192
-	}
 	e, err := tokenizer.NewEncoder()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create encoder: %w", err)
 	}
-	totalTokens := 0
-	for _, message := range conversationHistory[chatID] {
-		q, err := e.Encode(message.Content)
+
+	totalTokensForFunctions := 0
+	for _, function := range functions {
+		if function.Active == 0 || function.Default == 0 {
+			continue
+		}
+		conversationFunction := gpt3.ChatCompletionRequestFunction{}
+		conversationFunction.Name = function.Name
+		conversationFunction.Description = function.Description
+		conversationFunction.Parameters = gpt3.ChatCompletionRequestFunctionParameters{
+			Type:       "object",
+			Properties: function.Args.Properties,
+			Required:   function.Args.Required,
+		}
+		conversationFunction.FunctionCall = "auto"
+		conversationFunctions = append(conversationFunctions, conversationFunction)
+
+		functionS, _ := json.Marshal(conversationFunction)
+		q, err := e.Encode(string(functionS))
 		if err != nil {
 			return nil, fmt.Errorf("failed to encode message: %w", err)
 		}
-		totalTokens += len(q)
-		q, err = e.Encode(message.Role)
-		if err != nil {
-			return nil, fmt.Errorf("failed to encode message: %w", err)
-		}
-		totalTokens += len(q)
+		totalTokensForFunctions += len(q)
 	}
-	maxTokens -= totalTokens + 100
+	temp := float32(0.7)
 	request := gpt3.ChatCompletionRequest{
 		Model:       model,
 		Messages:    conversationHistory[chatID],
 		Temperature: &temp,
-		MaxTokens:   maxTokens,
 		TopP:        1,
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(10*time.Minute))
 	mu.Lock()
 	user := userSettingsMap[chatID]
@@ -805,6 +816,24 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 	go func() {
 		var err error
 		if model == GPT4Model || model == GPT4BrowsingModel {
+			maxTokens := 8192
+
+			totalTokens := 0
+			for _, message := range conversationHistory[chatID] {
+				q, err := e.Encode(message.Content)
+				if err != nil {
+					return // nil, fmt.Errorf("failed to encode message: %w", err)
+				}
+				totalTokens += len(q)
+				q, err = e.Encode(message.Role)
+				if err != nil {
+					return // nil, fmt.Errorf("failed to encode message: %w", err)
+				}
+				totalTokens += len(q)
+			}
+			maxTokens -= totalTokens + 100
+			request.MaxTokens = maxTokens
+
 			err = openaiClientGPT4.ChatCompletionStream(ctx, request, func(completion *gpt3.ChatCompletionStreamResponse) {
 				log.Printf("Received completion: %v\n", completion)
 				response <- completion.Choices[0].Delta.Content
@@ -826,31 +855,117 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 				}
 			})
 		} else {
-			err = openaiClient.ChatCompletionStream(ctx, request, func(completion *gpt3.ChatCompletionStreamResponse) {
-				log.Printf("Received completion: %v\n", completion)
-				response <- completion.Choices[0].Delta.Content
-				mu.Lock()
-				user := userSettingsMap[chatID]
-				user.CurrentMessageBuffer += completion.Choices[0].Delta.Content
-				userSettingsMap[chatID] = user
-				mu.Unlock()
-				if completion.Choices[0].FinishReason != "" {
+			functionCallHistory := make(map[string]bool)
+			for {
+				maxTokens := 4096
+				if model == GPT4Model || model == GPT4BrowsingModel {
+					maxTokens = 8192
+				} else if model == GPT35TurboModel16k {
+					maxTokens = 16384
+				}
+				totalTokens := 0
+				for _, message := range conversationHistory[chatID] {
+					q, err := e.Encode(message.Content)
+					if err != nil {
+						return // nil, fmt.Errorf("failed to encode message: %w", err)
+					}
+					totalTokens += len(q)
+					q, err = e.Encode(message.Role)
+					if err != nil {
+						return // nil, fmt.Errorf("failed to encode message: %w", err)
+					}
+					totalTokens += len(q)
+				}
+				maxTokens -= totalTokens + totalTokensForFunctions + 100
+
+				if maxTokens < 10 {
+					response <- "Ошибка: закончился размер контекста, использовано " + fmt.Sprint(totalTokens+totalTokensForFunctions) + "токенов.\n\n"
+					break
+				}
+
+				request.MaxTokens = maxTokens
+				request.Functions = conversationFunctions
+				request.Messages = conversationHistory[chatID]
+				functionCallName := ""
+				functionCallArgs := ""
+				err = openaiClient.ChatCompletionStream(ctx, request, func(completion *gpt3.ChatCompletionStreamResponse) {
+					log.Printf("Received completion: %v\n", completion)
+					if completion.Choices[0].Delta.FunctionCall.Name != "" ||
+						completion.Choices[0].Delta.FunctionCall.Arguments != "" {
+						functionCallName += completion.Choices[0].Delta.FunctionCall.Name
+						functionCallArgs += completion.Choices[0].Delta.FunctionCall.Arguments
+					} else {
+						if completion.Choices[0].Delta.Content != "" {
+							response <- completion.Choices[0].Delta.Content
+						}
+					}
 					mu.Lock()
 					user := userSettingsMap[chatID]
-					if user.Model == GPT4BrowsingModel {
-						user.CurrentMessageBuffer = GPT4BrowsingReplaceMetadata(user.CurrentMessageBuffer, true)
-					}
+					user.CurrentMessageBuffer += completion.Choices[0].Delta.Content
 					userSettingsMap[chatID] = user
 					mu.Unlock()
-					CompleteResponse(chatID)
-					close(response)
+					if completion.Choices[0].FinishReason != "" {
+						if functionCallName != "" {
+							conversationHistory[chatID] = append(conversationHistory[chatID], gpt3.ChatCompletionRequestMessage{
+								Role:    "assistant",
+								Content: "",
+								FunctionCall: gpt3.ChatCompletionResponseFunctionCall{
+									Name:      functionCallName,
+									Arguments: functionCallArgs,
+								},
+							})
+							response <- functionCallName + "(" + functionCallArgs + ")\n\n"
+						} else {
+							mu.Lock()
+							user := userSettingsMap[chatID]
+							if user.Model == GPT4BrowsingModel {
+								user.CurrentMessageBuffer = GPT4BrowsingReplaceMetadata(user.CurrentMessageBuffer, true)
+							}
+							userSettingsMap[chatID] = user
+							mu.Unlock()
+							CompleteResponse(chatID)
+							close(response)
+						}
+					}
+				})
+				if functionCallName != "" {
+					if functionCallHistory[functionCallName+functionCallArgs] {
+						output := "Ошибка вызова функции: повторный вызов функции с одними и теми же аргументами"
+						functionCallHistory[functionCallName+functionCallArgs] = true
+						response <- output + "\n\n"
+						conversationHistory[chatID] = append(conversationHistory[chatID], gpt3.ChatCompletionRequestMessage{
+							Role:    "function",
+							Content: output,
+							Name:    functionCallName,
+						})
+						functionCallName = ""
+						functionCallArgs = ""
+						continue
+					}
+					output, err := CallFunction(functionCallName, functionCallArgs)
+					functionCallHistory[functionCallName+functionCallArgs] = true
+					if err != nil {
+						response <- "Ошибка вызова функции: " + err.Error() + "\n\n"
+					} else {
+						//response <- output + "\n\n"
+						conversationHistory[chatID] = append(conversationHistory[chatID], gpt3.ChatCompletionRequestMessage{
+							Role:    "function",
+							Content: output,
+							Name:    functionCallName,
+						})
+						functionCallName = ""
+						functionCallArgs = ""
+					}
+				} else {
+					break
 				}
-			})
+			}
 		}
 		if err != nil {
+			response <- "failed to call OpenAI API: " + err.Error()
 			// if response open, close it
 			if _, ok := <-response; ok {
-				response <- "failed to call OpenAI API"
+
 				close(response)
 			}
 			// return nil, fmt.Errorf("failed to call OpenAI API: %w", err)

@@ -32,7 +32,7 @@ type EmbeddingEngine string
 const (
 	GPT3Dot5Turbo             = "gpt-3.5-turbo"
 	GPT3Dot5Turbo0301         = "gpt-3.5-turbo-0301"
-	GPT4   			          = "gpt4"
+	GPT4                      = "gpt4"
 	TextSimilarityAda001      = "text-similarity-ada-001"
 	TextSimilarityBabbage001  = "text-similarity-babbage-001"
 	TextSimilarityCurie001    = "text-similarity-curie-001"
@@ -408,7 +408,7 @@ func (c *client) Moderation(ctx context.Context, request ModerationRequest) (*Mo
 
 func (c *client) performRequest(req *http.Request) (*http.Response, error) {
 	client := http.Client{
-		Timeout: 10 * time.Minute,
+		Timeout: 30 * time.Minute,
 	}
 	resp, err := client.Do(req)
 	if err != nil {

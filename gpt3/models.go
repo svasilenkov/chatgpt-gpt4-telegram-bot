@@ -37,8 +37,24 @@ type ChatCompletionRequestMessage struct {
 	// Role is the role is the role of the the message. Can be "system", "user", or "assistant"
 	Role string `json:"role"`
 
+	Name string `json:"name,omitempty"`
+
 	// Content is the content of the message
-	Content string `json:"content"`
+	Content      string      `json:"content"`
+	FunctionCall interface{} `json:"function_call,omitempty"`
+}
+
+type ChatCompletionRequestFunctionParameters struct {
+	Type       string                       `json:"type"`
+	Properties map[string]map[string]string `json:"properties"`
+	Required   []string                     `json:"required"`
+}
+
+type ChatCompletionRequestFunction struct {
+	Name         string                                  `json:"name"`
+	Description  string                                  `json:"description"`
+	Parameters   ChatCompletionRequestFunctionParameters `json:"parameters"`
+	FunctionCall string                                  `json:"function_call"`
 }
 
 // ChatCompletionRequest is a request for the chat completion API
@@ -48,6 +64,8 @@ type ChatCompletionRequest struct {
 
 	// Messages is a list of messages to use as the context for the chat completion.
 	Messages []ChatCompletionRequestMessage `json:"messages"`
+
+	Functions []ChatCompletionRequestFunction `json:"functions"`
 
 	// What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic
 	Temperature *float32 `json:"temperature,omitempty"`
@@ -150,10 +168,16 @@ type LogprobResult struct {
 	TextOffset    []int                `json:"text_offset"`
 }
 
+type ChatCompletionResponseFunctionCall struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
 // ChatCompletionResponseMessage is a message returned in the response to the Chat Completions API
 type ChatCompletionResponseMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role         string                             `json:"role"`
+	Content      string                             `json:"content"`
+	FunctionCall ChatCompletionResponseFunctionCall `json:"function_call"`
 }
 
 // ChatCompletionResponseChoice is one of the choices returned in the response to the Chat Completions API
@@ -165,9 +189,10 @@ type ChatCompletionResponseChoice struct {
 
 // ChatCompletionResponseChoice is one of the choices returned in the response to the Chat Completions API
 type ChatCompletionStreamResponseChoice struct {
-	Index        int                           `json:"index"`
-	FinishReason string                        `json:"finish_reason"`
-	Delta        ChatCompletionResponseMessage `json:"delta"`
+	Index        int                                `json:"index"`
+	FinishReason string                             `json:"finish_reason"`
+	Delta        ChatCompletionResponseMessage      `json:"delta"`
+	FunctionCall ChatCompletionResponseFunctionCall `json:"function_call"`
 }
 
 // ChatCompletionsResponseUsage is the object that returns how many tokens the completion's request used
