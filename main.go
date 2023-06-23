@@ -879,7 +879,7 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 				maxTokens -= totalTokens + totalTokensForFunctions + 100
 
 				if maxTokens < 10 {
-					response <- "Ошибка: закончился размер контекста, использовано " + fmt.Sprint(totalTokens+totalTokensForFunctions) + "токенов.\n\n"
+					response <- "Ошибка: закончился размер контекста, использовано " + fmt.Sprint(totalTokens+totalTokensForFunctions) + " токенов.\n\n"
 					break
 				}
 
