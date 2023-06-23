@@ -154,7 +154,7 @@ func (c *BardChatbot) Ask(message string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	log.Printf("Bard response: %s", content)
+	log.Printf("Bard response: %s\n", content)
 
 	// Split the response body
 	split := strings.Split(string(content), "\n")
@@ -168,7 +168,7 @@ func (c *BardChatbot) Ask(message string) (string, error) {
 		return "", err
 	}
 
-	responseData := [][]interface{}{}
+	responseData := []interface{}{}
 
 	if len(wholeResponse) < 1 || len(wholeResponse[0]) < 3 {
 		return "", fmt.Errorf("Error: invalid response")
@@ -177,23 +177,25 @@ func (c *BardChatbot) Ask(message string) (string, error) {
 		return "", fmt.Errorf("Error: invalid response")
 	}
 
-	if err := json.Unmarshal([]byte(wholeResponse[0][2].(string)), &responseData); err != nil {
+	structS := wholeResponse[0][2].(string)
+	fmt.Println(structS)
+	if err := json.Unmarshal([]byte(structS), &responseData); err != nil {
 		return "", err
 	}
 	choices := []interface{}{}
-	if len(responseData) < 5 || len(responseData[4]) < 1 {
+	if len(responseData) < 5 || len(responseData[4].([]interface{})) < 1 {
 		return "", fmt.Errorf("Error: invalid response")
 	}
-	choices = responseData[4][0].([]interface{})
+	choices = (responseData[4].([]interface{}))[0].([]interface{})
 	if len(choices) < 1 {
 		return "", fmt.Errorf("Error: invalid response")
 	}
-	c.conversation_id = responseData[1][0].(string)
-	c.response_id = responseData[1][1].(string)
+	c.conversation_id = (responseData[1].([]interface{}))[0].(string)
+	c.response_id = (responseData[1].([]interface{}))[1].(string)
 	c.choice_id = choices[0].(string)
 	c.reqid += 100000
 
-	return responseData[0][0].(string), nil
+	return (responseData[0].([]interface{}))[0].(string), nil
 }
 
 func (c *BardChatbot) Reset() {
