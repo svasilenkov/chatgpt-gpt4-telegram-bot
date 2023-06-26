@@ -889,42 +889,44 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 				functionCallName := ""
 				functionCallArgs := ""
 				err = openaiClient.ChatCompletionStream(ctx, request, func(completion *gpt3.ChatCompletionStreamResponse) {
-					log.Printf("Received completion: %v\n", completion)
-					if completion.Choices[0].Delta.FunctionCall.Name != "" ||
-						completion.Choices[0].Delta.FunctionCall.Arguments != "" {
-						functionCallName += completion.Choices[0].Delta.FunctionCall.Name
-						functionCallArgs += completion.Choices[0].Delta.FunctionCall.Arguments
-					} else {
-						if completion.Choices[0].Delta.Content != "" {
-							response <- completion.Choices[0].Delta.Content
-						}
-					}
-					mu.Lock()
-					user := userSettingsMap[chatID]
-					user.CurrentMessageBuffer += completion.Choices[0].Delta.Content
-					userSettingsMap[chatID] = user
-					mu.Unlock()
-					if completion.Choices[0].FinishReason != "" {
-						if functionCallName != "" {
-							conversationHistory[chatID] = append(conversationHistory[chatID], gpt3.ChatCompletionRequestMessage{
-								Role:    "assistant",
-								Content: "",
-								FunctionCall: gpt3.ChatCompletionResponseFunctionCall{
-									Name:      functionCallName,
-									Arguments: functionCallArgs,
-								},
-							})
-							response <- functionCallName + "(" + functionCallArgs + ")\n\n"
+					if len(completion.Choices) > 0 {
+						log.Printf("Received completion: %v\n", completion)
+						if completion.Choices[0].Delta.FunctionCall.Name != "" ||
+							completion.Choices[0].Delta.FunctionCall.Arguments != "" {
+							functionCallName += completion.Choices[0].Delta.FunctionCall.Name
+							functionCallArgs += completion.Choices[0].Delta.FunctionCall.Arguments
 						} else {
-							mu.Lock()
-							user := userSettingsMap[chatID]
-							if user.Model == GPT4BrowsingModel {
-								user.CurrentMessageBuffer = GPT4BrowsingReplaceMetadata(user.CurrentMessageBuffer, true)
+							if completion.Choices[0].Delta.Content != "" {
+								response <- completion.Choices[0].Delta.Content
 							}
-							userSettingsMap[chatID] = user
-							mu.Unlock()
-							CompleteResponse(chatID)
-							close(response)
+						}
+						mu.Lock()
+						user := userSettingsMap[chatID]
+						user.CurrentMessageBuffer += completion.Choices[0].Delta.Content
+						userSettingsMap[chatID] = user
+						mu.Unlock()
+						if completion.Choices[0].FinishReason != "" {
+							if functionCallName != "" {
+								conversationHistory[chatID] = append(conversationHistory[chatID], gpt3.ChatCompletionRequestMessage{
+									Role:    "assistant",
+									Content: "",
+									FunctionCall: gpt3.ChatCompletionResponseFunctionCall{
+										Name:      functionCallName,
+										Arguments: functionCallArgs,
+									},
+								})
+								response <- functionCallName + "(" + functionCallArgs + ")\n\n"
+							} else {
+								mu.Lock()
+								user := userSettingsMap[chatID]
+								if user.Model == GPT4BrowsingModel {
+									user.CurrentMessageBuffer = GPT4BrowsingReplaceMetadata(user.CurrentMessageBuffer, true)
+								}
+								userSettingsMap[chatID] = user
+								mu.Unlock()
+								CompleteResponse(chatID)
+								close(response)
+							}
 						}
 					}
 				})
