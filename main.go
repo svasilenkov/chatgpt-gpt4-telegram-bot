@@ -33,7 +33,7 @@ const (
 	BardModel          = "bard"
 )
 
-const DefaultModel = GPT35TurboModel
+const DefaultModel = GPT35TurboModel16k
 const DefaultSystemPrompt = "You are a helpful AI assistant."
 
 var config Config
