@@ -1,11 +1,9 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
-	"strings"
 )
 
 type CitationMetadata struct {
@@ -100,65 +98,4 @@ func ReplaceClickWithUrl(text string, urls []string) string {
 	}
 
 	return text
-}
-
-func GPT4BrowsingReplaceMetadata(inputText string, cleanCodeBlocks bool) string {
-	if strings.Count(inputText, "///text_message") != strings.Count(inputText, "\n"+`%%%TEXT_METADATA:`) {
-		inputText += "\n" + `%%%TEXT_METADATA:{}%%%` + "\n" + `\\\`
-	}
-	if strings.Count(inputText, "///") != strings.Count(inputText, "\n"+`\\\`) {
-		inputText += "\n" + `\\\`
-	}
-
-	inputText = strings.ReplaceAll(inputText, "\n", "%NEW_LINE%")
-
-	// Find all blocks with CODE_METADATA
-	re := regexp.MustCompile(`\/\/\/` + "code_message%NEW_LINE%%%%METADATA:(.+?)%%%(.*?)%NEW_LINE%" + `\\\\\\`)
-	blockMatches := re.FindAllStringSubmatch(inputText, -1)
-
-	// Parse each block's CODE_METADATA
-	for _, blockMatch := range blockMatches {
-		metadataString := blockMatch[1]
-
-		var urlList []string
-		var metadata Metadata
-		err := json.Unmarshal([]byte(metadataString), &metadata)
-		if err != nil {
-			//panic(err)
-		}
-		for _, item := range metadata.CiteMetadata.MetaDataList {
-			urlList = append(urlList, item.Url)
-		}
-		text := ReplaceClickWithUrl(blockMatch[2], urlList)
-		if cleanCodeBlocks || strings.Contains(text, "quote(") {
-			inputText = strings.Replace(inputText, blockMatch[0], "", 1)
-		} else {
-			inputText = strings.Replace(inputText, blockMatch[0], text+"\n", 1)
-		}
-	}
-
-	re = regexp.MustCompile(`\/\/\/` + "text_message%NEW_LINE%(.*?)%%%TEXT_METADATA:(.+?)%%%%NEW_LINE%" + `\\\\\\`)
-	blockMatches = re.FindAllStringSubmatch(inputText, -1)
-
-	// Parse each block's TEXT_METADATA
-	for _, blockMatch := range blockMatches {
-		metadataString := blockMatch[2]
-
-		var metadata Metadata
-		err := json.Unmarshal([]byte(metadataString), &metadata)
-		if err != nil {
-			//fmt.Println(metadataString)
-			//panic(err)
-		}
-		var urlList []string
-		for _, item := range metadata.Citations {
-			urlList = append(urlList, item.Metadata.Url)
-		}
-		text := ReplaceSourcesWithUrls(blockMatch[1], urlList)
-		inputText = strings.Replace(inputText, blockMatch[0], text, 1)
-	}
-
-	inputText = strings.ReplaceAll(inputText, "%NEW_LINE%", "\n")
-	fmt.Println(inputText)
-	return inputText
 }
