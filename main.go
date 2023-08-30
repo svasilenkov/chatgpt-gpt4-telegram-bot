@@ -587,15 +587,14 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		_, err := bot.Send(msg)
 		_ = err
 	case "retry":
+		break
 		// Retry the last message
 		mu.Lock()
 		lastMessage := conversationHistory[update.Message.Chat.ID][len(conversationHistory[update.Message.Chat.ID])-2]
 		conversationHistory[update.Message.Chat.ID] = conversationHistory[update.Message.Chat.ID][:len(conversationHistory[update.Message.Chat.ID])-2]
 		model := userSettingsMap[update.Message.Chat.ID].Model
 		if model == "" {
-
 			model = DefaultModel
-
 		}
 		mu.Unlock()
 		generatedText, err := generateTextWithGPT(lastMessage.Content, update.Message.Chat.ID, model)

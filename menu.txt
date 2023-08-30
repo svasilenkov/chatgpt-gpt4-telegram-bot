@@ -1,6 +1,5 @@
 start - Начать работу с ботом
 new - Начать новую беседу
-retry - Повторить последний ответ
 gpt4 - Включить OpenAI GPT4
 gpt35 - Включить OpenAI GPT3.5
 bard - Включить Google Bard
