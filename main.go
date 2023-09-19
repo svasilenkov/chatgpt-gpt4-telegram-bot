@@ -32,6 +32,7 @@ const (
 	GPT35TurboModel16k = "gpt-3.5-turbo-16k"
 	BardModel          = "bard"
 	DalleModel         = "dalle"
+	MidjourneyModel    = "midjourney"
 )
 
 const DefaultModel = GPT4Model0613
@@ -45,21 +46,25 @@ var userSettingsMap = make(map[int64]User)
 var mu = &sync.Mutex{}
 
 type User struct {
-	Model                string
-	SystemPrompt         string
-	State                string
-	CurrentContext       *context.CancelFunc
-	CurrentMessageBuffer string
-	BardChatbot          *BardChatbot
+	Model                 string
+	SystemPrompt          string
+	State                 string
+	CurrentContext        *context.CancelFunc
+	CurrentMessageBuffer  string
+	BardChatbot           *BardChatbot
+	LastMidjourneyPrompt  string
+	LastMidjourneyMessage DiscordMessage
 }
 
 type Config struct {
-	DebugMode        string   `yaml:"debug_mode"`
-	TelegramToken    string   `yaml:"telegram_token"`
-	OpenAIKey        string   `yaml:"openai_api_key"`
-	BardSession      string   `yaml:"bard_session_id"`
-	AllowedUsers     []string `yaml:"allowed_telegram_usernames"`
-	BardAllowedUsers []string `yaml:"bard_allowed_telegram_usernames"`
+	DebugMode           string   `yaml:"debug_mode"`
+	TelegramToken       string   `yaml:"telegram_token"`
+	OpenAIKey           string   `yaml:"openai_api_key"`
+	BardSession         string   `yaml:"bard_session_id"`
+	AllowedUsers        []string `yaml:"allowed_telegram_usernames"`
+	BardAllowedUsers    []string `yaml:"bard_allowed_telegram_usernames"`
+	MidjourneyToken     string   `yaml:"midjourney_token"`
+	MidjourneyChannelId string   `yaml:"midjourney_channel_id"`
 }
 
 func ReadConfig() (Config, error) {
@@ -361,7 +366,84 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					log.Printf("Failed to send message: %v", err)
 				}
 			}
+		} else if userSettingsMap[update.Message.Chat.ID].Model == MidjourneyModel {
+			//startTime := time.Now().UTC().Add(-time.Hour * 24 * 7)
+			startTime := time.Now().UTC()
+			startTimeTimestamp := startTime.Format(time.RFC3339)
 
+			if messageText == "U1" || messageText == "U2" || messageText == "U3" || messageText == "U4" {
+				err := MidjourneyUpscale(config.MidjourneyToken, config.MidjourneyChannelId, userSettingsMap[update.Message.Chat.ID].LastMidjourneyPrompt, userSettingsMap[update.Message.Chat.ID].LastMidjourneyMessage, messageText)
+				if err != nil {
+					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при отправке запроса к Midjourney: "+fmt.Sprint(err))
+					msg.ReplyToMessageID = update.Message.MessageID
+					msg.DisableWebPagePreview = true
+					_, err := bot.Send(msg)
+					if err != nil {
+						log.Printf("Failed to send message: %v", err)
+					}
+				}
+				result := MidjourneyGetUpscaleResult(config.MidjourneyToken, config.MidjourneyChannelId, userSettingsMap[update.Message.Chat.ID].LastMidjourneyPrompt, messageText, startTimeTimestamp)
+				if len(result.Attachments) == 0 || result.Attachments[0].URL == "" {
+					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при отправке запроса к Midjourney")
+					msg.ReplyToMessageID = update.Message.MessageID
+					msg.DisableWebPagePreview = true
+					_, err := bot.Send(msg)
+					if err != nil {
+						log.Printf("Failed to send message: %v", err)
+					}
+				} else {
+					photoBytes := LoadBytesFromURL(result.Attachments[0].URL, "")
+					photoFileBytes := tgbotapi.FileBytes{
+						Name:  "picture",
+						Bytes: photoBytes,
+					}
+					msg := tgbotapi.NewPhotoUpload(update.Message.Chat.ID, photoFileBytes)
+					msg.ReplyToMessageID = update.Message.MessageID
+					_, err1 := bot.Send(msg)
+					if err1 != nil {
+						log.Printf("Failed to send message: %v", err1)
+					}
+				}
+			} else {
+				err := MidjourneyImagine(config.MidjourneyToken, config.MidjourneyChannelId, messageText)
+				if err != nil {
+					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при отправке запроса к Midjourney: "+fmt.Sprint(err))
+					msg.ReplyToMessageID = update.Message.MessageID
+					msg.DisableWebPagePreview = true
+					_, err := bot.Send(msg)
+					if err != nil {
+						log.Printf("Failed to send message: %v", err)
+					}
+				}
+				result := MidjourneyGetImagineResult(config.MidjourneyToken, config.MidjourneyChannelId, messageText, startTimeTimestamp)
+				if len(result.Attachments) == 0 || result.Attachments[0].URL == "" {
+					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при отправке запроса к Midjourney")
+					msg.ReplyToMessageID = update.Message.MessageID
+					msg.DisableWebPagePreview = true
+					_, err := bot.Send(msg)
+					if err != nil {
+						log.Printf("Failed to send message: %v", err)
+					}
+				} else {
+					photoBytes := LoadBytesFromURL(result.Attachments[0].URL, "")
+					photoFileBytes := tgbotapi.FileBytes{
+						Name:  "picture",
+						Bytes: photoBytes,
+					}
+					msg := tgbotapi.NewPhotoUpload(update.Message.Chat.ID, photoFileBytes)
+					msg.ReplyToMessageID = update.Message.MessageID
+					_, err1 := bot.Send(msg)
+					if err1 != nil {
+						log.Printf("Failed to send message: %v", err1)
+					}
+					mu.Lock()
+					settings := userSettingsMap[update.Message.Chat.ID]
+					settings.LastMidjourneyPrompt = messageText
+					settings.LastMidjourneyMessage = result
+					userSettingsMap[update.Message.Chat.ID] = settings
+					mu.Unlock()
+				}
+			}
 		} else {
 			generatedTextStream, err := generateTextStreamWithGPT(messageText, update.Message.Chat.ID, model)
 			if err != nil {
@@ -620,6 +702,15 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		}
 		mu.Unlock()
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI DALL\\-E 2*\\.")
+		msg.ParseMode = "MarkdownV2"
+		bot.Send(msg)
+	case "midjourney":
+		mu.Lock()
+		userSettingsMap[update.Message.Chat.ID] = User{
+			Model: MidjourneyModel,
+		}
+		mu.Unlock()
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *Midjourney*\\.")
 		msg.ParseMode = "MarkdownV2"
 		bot.Send(msg)
 	case "retry":
