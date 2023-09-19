@@ -31,6 +31,7 @@ const (
 	GPT35TurboModel    = "gpt-3.5-turbo-0613"
 	GPT35TurboModel16k = "gpt-3.5-turbo-16k"
 	BardModel          = "bard"
+	DalleModel         = "dalle"
 )
 
 const DefaultModel = GPT4Model0613
@@ -335,6 +336,32 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					}
 				}
 			}
+		} else if userSettingsMap[update.Message.Chat.ID].Model == DalleModel {
+			conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{
+				{
+					Role:    "user",
+					Content: messageText,
+				},
+			}
+			result := DalleGenerations(config.OpenAIKey, messageText, 1, "1024x1024")
+			if len(result.Data) == 0 {
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при отправке запроса к OpenAI: "+fmt.Sprint(result))
+				msg.ReplyToMessageID = update.Message.MessageID
+				msg.DisableWebPagePreview = true
+				_, err := bot.Send(msg)
+				if err != nil {
+					log.Printf("Failed to send message: %v", err)
+				}
+			} else {
+				msg := tgbotapi.NewPhotoShare(update.Message.Chat.ID, "")
+				msg.FileID = result.Data[0].Url
+				msg.ReplyToMessageID = update.Message.MessageID
+				_, err := bot.Send(msg)
+				if err != nil {
+					log.Printf("Failed to send message: %v", err)
+				}
+			}
+
 		} else {
 			generatedTextStream, err := generateTextStreamWithGPT(messageText, update.Message.Chat.ID, model)
 			if err != nil {
@@ -586,6 +613,15 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		msg.ParseMode = "MarkdownV2"
 		_, err := bot.Send(msg)
 		_ = err
+	case "dalle":
+		mu.Lock()
+		userSettingsMap[update.Message.Chat.ID] = User{
+			Model: DalleModel,
+		}
+		mu.Unlock()
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *DALL\\-E 2*\\.")
+		msg.ParseMode = "MarkdownV2"
+		bot.Send(msg)
 	case "retry":
 		break
 		// Retry the last message
