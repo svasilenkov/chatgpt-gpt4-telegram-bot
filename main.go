@@ -619,7 +619,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			Model: DalleModel,
 		}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *DALL\\-E 2*\\.")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI DALL\\-E 2*\\.")
 		msg.ParseMode = "MarkdownV2"
 		bot.Send(msg)
 	case "retry":
