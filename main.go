@@ -152,6 +152,54 @@ func translateText(projectID string, sourceLang string, targetLang string, text 
 	return translations, nil
 }
 
+func detectLanguage(projectID string, text string) (string, error) {
+	tempdir, e := ioutil.TempDir("", "chatbot")
+	if e != nil {
+		log.Fatal(e)
+	}
+	accountKeyPath := tempdir + "/gckey.json"
+	defer os.RemoveAll(tempdir)
+	ioutil.WriteFile(accountKeyPath, []byte(config.GoogleCloudKeyfile), 0644)
+
+	// Instantiates a client
+	ctx := context.Background()
+	client, err := translate.NewTranslationClient(ctx, option.WithCredentialsFile(accountKeyPath))
+	if err != nil {
+		return "", fmt.Errorf("NewTranslationClient: %w", err)
+	}
+	defer client.Close()
+
+	req := &translatepb.DetectLanguageRequest{
+		Parent:   fmt.Sprintf("projects/%s/locations/global", projectID),
+		MimeType: "text/plain", // Mime types: "text/plain", "text/html"
+		Source: &translatepb.DetectLanguageRequest_Content{
+			Content: text,
+		},
+	}
+
+	resp, err := client.DetectLanguage(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("DetectLanguage: %w", err)
+	}
+
+	// Display list of detected languages sorted by detection confidence.
+	// The most probable language is first.
+	languages := resp.GetLanguages()
+	for _, language := range languages {
+		// The language detected.
+		fmt.Printf("Language code: %v\n", language.GetLanguageCode())
+		// Confidence of detection result for this language.
+		fmt.Printf("Confidence: %v\n", language.GetConfidence())
+	}
+
+	language := ""
+	if len(languages) > 0 {
+		language = languages[0].GetLanguageCode()
+	}
+
+	return language, nil
+}
+
 func main() {
 
 	var err error
@@ -159,7 +207,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to read config: %v", err)
 	}
-
 	// Initialize the OpenAI API client
 	//customOpenAIAPIEndpoint := os.Getenv("CUSTOM_OPENAI_API_ENDPOINT")
 	//openaiClientGPT4 = gpt3.NewClient(config.OpenAIKey, gpt3.WithBaseURL(customOpenAIAPIEndpoint+"/v1"))
@@ -581,14 +628,17 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 							log.Printf("Failed to send message: %v", err)
 						}
 					} else {
-						translationText, e := translateText(config.GoogleCloudProjectName, "ru", "en-US", messageText)
-						if e == nil && len(translationText) > 0 {
-							messageText = translationText[0]
-							msg := tgbotapi.NewMessage(update.Message.Chat.ID, messageText)
-							msg.DisableWebPagePreview = true
-							_, err := bot.Send(msg)
-							if err != nil {
-								log.Printf("Failed to send message: %v", err)
+						languageCode, err := detectLanguage(config.GoogleCloudProjectName, messageText)
+						if err != nil || languageCode != "en" {
+							translationText, e := translateText(config.GoogleCloudProjectName, "ru", "en-US", messageText)
+							if e == nil && len(translationText) > 0 {
+								messageText = translationText[0]
+								msg := tgbotapi.NewMessage(update.Message.Chat.ID, messageText)
+								msg.DisableWebPagePreview = true
+								_, err := bot.Send(msg)
+								if err != nil {
+									log.Printf("Failed to send message: %v", err)
+								}
 							}
 						}
 					}
