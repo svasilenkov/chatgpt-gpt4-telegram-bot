@@ -66,6 +66,16 @@ func MidjourneyLoadChannelMessages(token, channelId string) []DiscordMessage {
 	return messages
 }
 
+func MidjourneyLoadChannelMessage(token, channelId, messageId string) DiscordMessage {
+	messages := MidjourneyLoadChannelMessages(token, channelId)
+	for _, message := range messages {
+		if message.Id == messageId {
+			return message
+		}
+	}
+	return DiscordMessage{}
+}
+
 const (
 	ApplicationID string = "936929561302675456"
 	SessionID     string = "ea8816d857ba9ae2f74c59ae1a953afe"
@@ -350,9 +360,9 @@ func MidjourneyUpscaleOrVariation(token, channelId string, message DiscordMessag
 func MidjourneyOutpaint(token, channelId string, message DiscordMessage, label string) error {
 	customIdPrefix := ""
 	switch label {
-	case "Расширить 2x":
+	case "ZO20":
 		customIdPrefix = "MJ::Outpaint::50"
-	case "Расширить 1.5x":
+	case "ZO15":
 		customIdPrefix = "MJ::Outpaint::75"
 	}
 

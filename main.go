@@ -49,14 +49,12 @@ var userSettingsMap = make(map[int64]User)
 var mu = &sync.Mutex{}
 
 type User struct {
-	Model                 string
-	SystemPrompt          string
-	State                 string
-	CurrentContext        *context.CancelFunc
-	CurrentMessageBuffer  string
-	BardChatbot           *BardChatbot
-	LastMidjourneyPrompt  string
-	LastMidjourneyMessage DiscordMessage
+	Model                string
+	SystemPrompt         string
+	State                string
+	CurrentContext       *context.CancelFunc
+	CurrentMessageBuffer string
+	BardChatbot          *BardChatbot
 }
 
 type Config struct {
@@ -235,11 +233,15 @@ func main() {
 	// Handle updates
 	for update := range updates {
 		go func(update tgbotapi.Update) {
-			if update.Message == nil {
+			if update.Message == nil && update.CallbackQuery == nil {
 				return
 			}
-			if update.Message.IsCommand() {
-				handleCommand(bot, update)
+			if update.Message != nil {
+				if update.Message.IsCommand() {
+					handleCommand(bot, update)
+				} else {
+					handleMessage(bot, update)
+				}
 			} else {
 				handleMessage(bot, update)
 			}
@@ -354,29 +356,35 @@ func telegramPrepareMarkdownMessageV2(msg string) string {
 }
 
 func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
-	if !contains(config.AllowedUsers, update.Message.From.UserName) {
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вам нельзя пользоваться этим ботом")
-		bot.Send(msg)
-		return
-	}
-	mu.Lock()
-	state := userSettingsMap[update.Message.Chat.ID].State
-	model := userSettingsMap[update.Message.Chat.ID].Model
-	if model == "" {
-		model = DefaultModel
-	}
-	mu.Unlock()
-	if state == StateWaitingForSystemPrompt {
+	state := ""
+	model := ""
+	chatId := int64(0)
+	if update.Message != nil {
+		chatId = update.Message.Chat.ID
+		if !contains(config.AllowedUsers, update.Message.From.UserName) {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Вам нельзя пользоваться этим ботом")
+			bot.Send(msg)
+			return
+		}
 		mu.Lock()
-		userSettingsMap[update.Message.Chat.ID] = User{
-			Model:        model,
-			SystemPrompt: update.Message.Text,
-			State:        StateDefault,
+		state = userSettingsMap[update.Message.Chat.ID].State
+		model = userSettingsMap[update.Message.Chat.ID].Model
+		if model == "" {
+			model = DefaultModel
 		}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Системный промпт установлен.")
-		bot.Send(msg)
-		return
+		if state == StateWaitingForSystemPrompt {
+			mu.Lock()
+			userSettingsMap[update.Message.Chat.ID] = User{
+				Model:        model,
+				SystemPrompt: update.Message.Text,
+				State:        StateDefault,
+			}
+			mu.Unlock()
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Системный промпт установлен.")
+			bot.Send(msg)
+			return
+		}
 	}
 	/*generatedText, err := generateTextWithGPT(update.Message.Text, update.Message.Chat.ID, model)
 	if err != nil {
@@ -391,30 +399,44 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	if err != nil {
 		log.Printf("Failed to send message: %v", err)
 	}*/
-	messageText := update.Message.Text
-	if update.Message.Voice != nil || update.Message.Audio != nil {
-		messageText = convertAudioToText(update.Message, bot)
-		if messageText == "" {
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Не удалось распознать аудио")
-			msg.ReplyToMessageID = update.Message.MessageID
+	messageText := ""
+	if update.Message != nil {
+		messageText = update.Message.Text
+		if update.Message.Voice != nil || update.Message.Audio != nil {
+			messageText = convertAudioToText(update.Message, bot)
+			if messageText == "" {
+				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Не удалось распознать аудио")
+				msg.ReplyToMessageID = update.Message.MessageID
+				_, err := bot.Send(msg)
+				if err != nil {
+					fmt.Println(err)
+				}
+			}
+
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, messageText)
+			msg.DisableWebPagePreview = true
 			_, err := bot.Send(msg)
 			if err != nil {
-				fmt.Println(err)
+				log.Printf("Failed to send message: %v", err)
 			}
 		}
+	}
+	type MidjourneyCommandMessage struct {
+		Id      string `json:"i"`
+		Command string `json:"m"`
+	}
+	midjourneyMessageInfo := MidjourneyCommandMessage{}
 
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, messageText)
-		msg.DisableWebPagePreview = true
-		_, err := bot.Send(msg)
-		if err != nil {
-			log.Printf("Failed to send message: %v", err)
-		}
+	if update.CallbackQuery != nil {
+		json.Unmarshal([]byte(update.CallbackQuery.Data), &midjourneyMessageInfo)
+		messageText = midjourneyMessageInfo.Command
+		chatId = update.CallbackQuery.Message.Chat.ID
 	}
 	if messageText != "" {
-		if userSettingsMap[update.Message.Chat.ID].Model == BardModel {
-			response, err := userSettingsMap[update.Message.Chat.ID].BardChatbot.Ask(messageText)
+		if userSettingsMap[chatId].Model == BardModel {
+			response, err := userSettingsMap[chatId].BardChatbot.Ask(messageText)
 			if err != nil {
-				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка обращаения к Bard: "+err.Error())
+				msg := tgbotapi.NewMessage(chatId, "Ошибка обращаения к Bard: "+err.Error())
 				msg.ReplyToMessageID = update.Message.MessageID
 				msg.DisableWebPagePreview = true
 				_, err := bot.Send(msg)
@@ -422,14 +444,14 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					fmt.Println(err)
 				}
 			} else {
-				response = userSettingsMap[update.Message.Chat.ID].BardChatbot.PrepareForTelegramMarkdown(response)
-				msg := tgbotapi.NewMessage(update.Message.Chat.ID, response)
+				response = userSettingsMap[chatId].BardChatbot.PrepareForTelegramMarkdown(response)
+				msg := tgbotapi.NewMessage(chatId, response)
 				msg.ParseMode = "Markdown"
 				msg.ReplyToMessageID = update.Message.MessageID
 				_, err := bot.Send(msg)
 				if err != nil {
 					log.Printf("Failed to send message as Markdown: %v"+response, err)
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, response)
+					msg := tgbotapi.NewMessage(chatId, response)
 					msg.ReplyToMessageID = update.Message.MessageID
 					msg.DisableWebPagePreview = true
 					_, err := bot.Send(msg)
@@ -438,8 +460,8 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					}
 				}
 			}
-		} else if userSettingsMap[update.Message.Chat.ID].Model == DalleModel {
-			conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{
+		} else if userSettingsMap[chatId].Model == DalleModel {
+			conversationHistory[chatId] = []gpt3.ChatCompletionRequestMessage{
 				{
 					Role:    "user",
 					Content: messageText,
@@ -447,7 +469,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			}
 			result := DalleGenerations(config.OpenAIKey, messageText, 1, "1024x1024")
 			if len(result.Data) == 0 {
-				msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при отправке запроса к OpenAI: "+fmt.Sprint(result))
+				msg := tgbotapi.NewMessage(chatId, "Ошибка при отправке запроса к OpenAI: "+fmt.Sprint(result))
 				msg.ReplyToMessageID = update.Message.MessageID
 				msg.DisableWebPagePreview = true
 				_, err := bot.Send(msg)
@@ -455,7 +477,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					log.Printf("Failed to send message: %v", err)
 				}
 			} else {
-				msg := tgbotapi.NewPhotoShare(update.Message.Chat.ID, "")
+				msg := tgbotapi.NewPhotoShare(chatId, "")
 				msg.FileID = result.Data[0].Url
 				msg.ReplyToMessageID = update.Message.MessageID
 				_, err := bot.Send(msg)
@@ -463,46 +485,33 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					log.Printf("Failed to send message: %v", err)
 				}
 			}
-		} else if userSettingsMap[update.Message.Chat.ID].Model == MidjourneyModel {
+		} else if userSettingsMap[chatId].Model == MidjourneyModel {
 			//startTime := time.Now().UTC().Add(-time.Hour * 24 * 7)
 			startTime := time.Now().UTC()
 			startTimeTimestamp := startTime.Format(time.RFC3339)
 
-			if messageText == "Увеличить 1" || messageText == "Увеличить 2" || messageText == "Увеличить 3" || messageText == "Увеличить 4" ||
-				messageText == "Вариация 1" || messageText == "Вариация 2" || messageText == "Вариация 3" || messageText == "Вариация 4" {
-				label := ""
-				switch messageText {
-				case "Увеличить 1":
-					label = "U1"
-				case "Увеличить 2":
-					label = "U2"
-				case "Увеличить 3":
-					label = "U3"
-				case "Увеличить 4":
-					label = "U4"
-				case "Вариация 1":
-					label = "V1"
-				case "Вариация 2":
-					label = "V2"
-				case "Вариация 3":
-					label = "V3"
-				case "Вариация 4":
-					label = "V4"
+			if messageText == "U1" || messageText == "U2" || messageText == "U3" || messageText == "U4" ||
+				messageText == "V1" || messageText == "V2" || messageText == "V3" || messageText == "V4" {
+				label := messageText
+				midjourneyMessage := MidjourneyLoadChannelMessage(config.MidjourneyToken, config.MidjourneyChannelId, midjourneyMessageInfo.Id)
+				midjourneyMessagePrompt := ""
+				if strings.Contains(midjourneyMessage.Content, "**") {
+					midjourneyMessagePrompt = substr(midjourneyMessage.Content, strings.Index(midjourneyMessage.Content, "**")+2, strings.Index(midjourneyMessage.Content[strings.Index(midjourneyMessage.Content, "**")+2:], "**"))
 				}
-				err := MidjourneyUpscaleOrVariation(config.MidjourneyToken, config.MidjourneyChannelId, userSettingsMap[update.Message.Chat.ID].LastMidjourneyMessage, label)
+				err := MidjourneyUpscaleOrVariation(config.MidjourneyToken, config.MidjourneyChannelId, midjourneyMessage, label)
 				if err != nil {
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при отправке запроса к Midjourney: "+fmt.Sprint(err))
-					msg.ReplyToMessageID = update.Message.MessageID
+					msg := tgbotapi.NewMessage(chatId, "Ошибка при отправке запроса к Midjourney: "+fmt.Sprint(err))
+					msg.ReplyToMessageID = update.CallbackQuery.Message.MessageID
 					msg.DisableWebPagePreview = true
 					_, err := bot.Send(msg)
 					if err != nil {
 						log.Printf("Failed to send message: %v", err)
 					}
 				}
-				result := MidjourneyGetUpscaleOrVariationResult(config.MidjourneyToken, config.MidjourneyChannelId, userSettingsMap[update.Message.Chat.ID].LastMidjourneyPrompt, label, startTimeTimestamp)
+				result := MidjourneyGetUpscaleOrVariationResult(config.MidjourneyToken, config.MidjourneyChannelId, midjourneyMessagePrompt, label, startTimeTimestamp)
 				if len(result.Attachments) == 0 || result.Attachments[0].URL == "" {
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при отправке запроса к Midjourney")
-					msg.ReplyToMessageID = update.Message.MessageID
+					msg := tgbotapi.NewMessage(chatId, "Ошибка при отправке запроса к Midjourney")
+					msg.ReplyToMessageID = update.CallbackQuery.Message.MessageID
 					msg.DisableWebPagePreview = true
 					_, err := bot.Send(msg)
 					if err != nil {
@@ -514,75 +523,105 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 						Name:  "picture",
 						Bytes: photoBytes,
 					}
-					var photoOptions = tgbotapi.ReplyKeyboardMarkup{}
+					var photoOptions = tgbotapi.InlineKeyboardMarkup{}
 
 					switch messageText {
-					case "Увеличить 1":
+					case "U1":
 						fallthrough
-					case "Увеличить 2":
+					case "U2":
 						fallthrough
-					case "Увеличить 3":
+					case "U3":
 						fallthrough
-					case "Увеличить 4":
-						photoOptions = tgbotapi.NewReplyKeyboard(
-							tgbotapi.NewKeyboardButtonRow(
-								tgbotapi.NewKeyboardButton("Расширить 2x"),
-								tgbotapi.NewKeyboardButton("Расширить 1.5x"),
+					case "U4":
+						midjourneyMessageInfo := MidjourneyCommandMessage{
+							Id:      result.Id,
+							Command: "ZO20",
+						}
+						midjourneyMessageInfoS1, _ := json.Marshal(midjourneyMessageInfo)
+						midjourneyMessageInfo = MidjourneyCommandMessage{
+							Id:      result.Id,
+							Command: "ZO15",
+						}
+						midjourneyMessageInfoS2, _ := json.Marshal(midjourneyMessageInfo)
+						photoOptions = tgbotapi.NewInlineKeyboardMarkup(
+							tgbotapi.NewInlineKeyboardRow(
+								tgbotapi.NewInlineKeyboardButtonData("Р 2x", string(midjourneyMessageInfoS1)),
+								tgbotapi.NewInlineKeyboardButtonData("Р 1.5x", string(midjourneyMessageInfoS2)),
 							),
 						)
-					case "Вариация 1":
+					case "V1":
 						fallthrough
-					case "Вариация 2":
+					case "V2":
 						fallthrough
-					case "Вариация 3":
+					case "V3":
 						fallthrough
-					case "Вариация 4":
-						photoOptions = tgbotapi.NewReplyKeyboard(
-							tgbotapi.NewKeyboardButtonRow(
-								tgbotapi.NewKeyboardButton("Увеличить 1"),
-								tgbotapi.NewKeyboardButton("Увеличить 2"),
-								tgbotapi.NewKeyboardButton("Увеличить 3"),
-								tgbotapi.NewKeyboardButton("Увеличить 4"),
+					case "V4":
+						midjourneyMessageInfo := MidjourneyCommandMessage{
+							Id:      result.Id,
+							Command: "U1",
+						}
+						midjourneyMessageInfoS1, _ := json.Marshal(midjourneyMessageInfo)
+						midjourneyMessageInfo = MidjourneyCommandMessage{
+							Id:      result.Id,
+							Command: "U2",
+						}
+						midjourneyMessageInfoS2, _ := json.Marshal(midjourneyMessageInfo)
+						midjourneyMessageInfo = MidjourneyCommandMessage{
+							Id:      result.Id,
+							Command: "U3",
+						}
+						midjourneyMessageInfoS3, _ := json.Marshal(midjourneyMessageInfo)
+						midjourneyMessageInfo = MidjourneyCommandMessage{
+							Id:      result.Id,
+							Command: "U4",
+						}
+						midjourneyMessageInfoS4, _ := json.Marshal(midjourneyMessageInfo)
+
+						photoOptions = tgbotapi.NewInlineKeyboardMarkup(
+							tgbotapi.NewInlineKeyboardRow(
+								tgbotapi.NewInlineKeyboardButtonData("У1", string(midjourneyMessageInfoS1)),
+								tgbotapi.NewInlineKeyboardButtonData("У2", string(midjourneyMessageInfoS2)),
+								tgbotapi.NewInlineKeyboardButtonData("У3", string(midjourneyMessageInfoS3)),
+								tgbotapi.NewInlineKeyboardButtonData("У4", string(midjourneyMessageInfoS4)),
 							),
 						)
 					}
 
-					msg := tgbotapi.NewPhotoUpload(update.Message.Chat.ID, photoFileBytes)
-					msg.ReplyToMessageID = update.Message.MessageID
+					msg := tgbotapi.NewPhotoUpload(chatId, photoFileBytes)
+					msg.ReplyToMessageID = update.CallbackQuery.Message.MessageID
 					msg.ReplyMarkup = photoOptions
 					_, err1 := bot.Send(msg)
 					if err1 != nil {
 						log.Printf("Failed to send message: %v", err1)
 					}
-					mu.Lock()
-					settings := userSettingsMap[update.Message.Chat.ID]
-					settings.LastMidjourneyPrompt = userSettingsMap[update.Message.Chat.ID].LastMidjourneyPrompt
-					settings.LastMidjourneyMessage = result
-					userSettingsMap[update.Message.Chat.ID] = settings
-					mu.Unlock()
 				}
-			} else if messageText == "Расширить 2x" || messageText == "Расширить 1.5x" {
+			} else if messageText == "ZO20" || messageText == "ZO15" {
 				label := ""
 				switch messageText {
-				case "Расширить 2x":
+				case "ZO20":
 					label = "Zoom Out"
-				case "Расширить 1.5x":
+				case "ZO15":
 					label = "Zoom Out"
 				}
-				err := MidjourneyOutpaint(config.MidjourneyToken, config.MidjourneyChannelId, userSettingsMap[update.Message.Chat.ID].LastMidjourneyMessage, messageText)
+				midjourneyMessage := MidjourneyLoadChannelMessage(config.MidjourneyToken, config.MidjourneyChannelId, midjourneyMessageInfo.Id)
+				midjourneyMessagePrompt := ""
+				if strings.Contains(midjourneyMessage.Content, "**") {
+					midjourneyMessagePrompt = substr(midjourneyMessage.Content, strings.Index(midjourneyMessage.Content, "**")+2, strings.Index(midjourneyMessage.Content[strings.Index(midjourneyMessage.Content, "**")+2:], "**"))
+				}
+				err := MidjourneyOutpaint(config.MidjourneyToken, config.MidjourneyChannelId, midjourneyMessage, messageText)
 				if err != nil {
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при отправке запроса к Midjourney: "+fmt.Sprint(err))
-					msg.ReplyToMessageID = update.Message.MessageID
+					msg := tgbotapi.NewMessage(chatId, "Ошибка при отправке запроса к Midjourney: "+fmt.Sprint(err))
+					msg.ReplyToMessageID = update.CallbackQuery.Message.MessageID
 					msg.DisableWebPagePreview = true
 					_, err := bot.Send(msg)
 					if err != nil {
 						log.Printf("Failed to send message: %v", err)
 					}
 				}
-				result := MidjourneyGetOutpaintResult(config.MidjourneyToken, config.MidjourneyChannelId, userSettingsMap[update.Message.Chat.ID].LastMidjourneyPrompt, label, startTimeTimestamp)
+				result := MidjourneyGetOutpaintResult(config.MidjourneyToken, config.MidjourneyChannelId, midjourneyMessagePrompt, label, startTimeTimestamp)
 				if len(result.Attachments) == 0 || result.Attachments[0].URL == "" {
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при отправке запроса к Midjourney")
-					msg.ReplyToMessageID = update.Message.MessageID
+					msg := tgbotapi.NewMessage(chatId, "Ошибка при отправке запроса к Midjourney")
+					msg.ReplyToMessageID = update.CallbackQuery.Message.MessageID
 					msg.DisableWebPagePreview = true
 					_, err := bot.Send(msg)
 					if err != nil {
@@ -594,34 +633,74 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 						Name:  "picture",
 						Bytes: photoBytes,
 					}
-					var photoOptions = tgbotapi.NewReplyKeyboard(
-						tgbotapi.NewKeyboardButtonRow(
-							tgbotapi.NewKeyboardButton("Увеличить 1"),
-							tgbotapi.NewKeyboardButton("Увеличить 2"),
-							tgbotapi.NewKeyboardButton("Увеличить 3"),
-							tgbotapi.NewKeyboardButton("Увеличить 4"),
+					midjourneyMessageInfo := MidjourneyCommandMessage{
+						Id:      result.Id,
+						Command: "U1",
+					}
+					midjourneyMessageInfoS1, _ := json.Marshal(midjourneyMessageInfo)
+					midjourneyMessageInfo = MidjourneyCommandMessage{
+						Id:      result.Id,
+						Command: "U2",
+					}
+					midjourneyMessageInfoS2, _ := json.Marshal(midjourneyMessageInfo)
+					midjourneyMessageInfo = MidjourneyCommandMessage{
+						Id:      result.Id,
+						Command: "U3",
+					}
+					midjourneyMessageInfoS3, _ := json.Marshal(midjourneyMessageInfo)
+					midjourneyMessageInfo = MidjourneyCommandMessage{
+						Id:      result.Id,
+						Command: "U4",
+					}
+					midjourneyMessageInfoS4, _ := json.Marshal(midjourneyMessageInfo)
+					midjourneyMessageInfo = MidjourneyCommandMessage{
+						Id:      result.Id,
+						Command: "V1",
+					}
+					midjourneyMessageInfoS5, _ := json.Marshal(midjourneyMessageInfo)
+					midjourneyMessageInfo = MidjourneyCommandMessage{
+						Id:      result.Id,
+						Command: "V2",
+					}
+					midjourneyMessageInfoS6, _ := json.Marshal(midjourneyMessageInfo)
+					midjourneyMessageInfo = MidjourneyCommandMessage{
+						Id:      result.Id,
+						Command: "V3",
+					}
+					midjourneyMessageInfoS7, _ := json.Marshal(midjourneyMessageInfo)
+					midjourneyMessageInfo = MidjourneyCommandMessage{
+						Id:      result.Id,
+						Command: "V4",
+					}
+					midjourneyMessageInfoS8, _ := json.Marshal(midjourneyMessageInfo)
+
+					var photoOptions = tgbotapi.NewInlineKeyboardMarkup(
+						tgbotapi.NewInlineKeyboardRow(
+							tgbotapi.NewInlineKeyboardButtonData("У1", string(midjourneyMessageInfoS1)),
+							tgbotapi.NewInlineKeyboardButtonData("У2", string(midjourneyMessageInfoS2)),
+							tgbotapi.NewInlineKeyboardButtonData("У3", string(midjourneyMessageInfoS3)),
+							tgbotapi.NewInlineKeyboardButtonData("У4", string(midjourneyMessageInfoS4)),
+							tgbotapi.NewInlineKeyboardButtonData("В1", string(midjourneyMessageInfoS5)),
+							tgbotapi.NewInlineKeyboardButtonData("В2", string(midjourneyMessageInfoS6)),
+							tgbotapi.NewInlineKeyboardButtonData("В3", string(midjourneyMessageInfoS7)),
+							tgbotapi.NewInlineKeyboardButtonData("В4", string(midjourneyMessageInfoS8)),
 						),
 					)
-					msg := tgbotapi.NewPhotoUpload(update.Message.Chat.ID, photoFileBytes)
-					msg.ReplyToMessageID = update.Message.MessageID
+
+					msg := tgbotapi.NewPhotoUpload(chatId, photoFileBytes)
+					msg.ReplyToMessageID = update.CallbackQuery.Message.MessageID
 					msg.ReplyMarkup = photoOptions
 					_, err1 := bot.Send(msg)
 					if err1 != nil {
 						log.Printf("Failed to send message: %v", err1)
 					}
-					mu.Lock()
-					settings := userSettingsMap[update.Message.Chat.ID]
-					settings.LastMidjourneyPrompt = userSettingsMap[update.Message.Chat.ID].LastMidjourneyPrompt
-					settings.LastMidjourneyMessage = result
-					userSettingsMap[update.Message.Chat.ID] = settings
-					mu.Unlock()
 				}
 			} else {
 				if contains(config.MidjourneyTranslateRUENUsernames, update.Message.From.UserName) {
 					if strings.HasPrefix(messageText, "en:") || strings.HasPrefix(messageText, "En:") {
 						messageText = strings.TrimPrefix(messageText, "en:")
 						messageText = strings.TrimPrefix(messageText, "En:")
-						msg := tgbotapi.NewMessage(update.Message.Chat.ID, messageText)
+						msg := tgbotapi.NewMessage(chatId, messageText)
 						msg.DisableWebPagePreview = true
 						_, err := bot.Send(msg)
 						if err != nil {
@@ -633,7 +712,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 							translationText, e := translateText(config.GoogleCloudProjectName, "ru", "en-US", messageText)
 							if e == nil && len(translationText) > 0 {
 								messageText = translationText[0]
-								msg := tgbotapi.NewMessage(update.Message.Chat.ID, messageText)
+								msg := tgbotapi.NewMessage(chatId, messageText)
 								msg.DisableWebPagePreview = true
 								_, err := bot.Send(msg)
 								if err != nil {
@@ -645,7 +724,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 				}
 				err := MidjourneyImagine(config.MidjourneyToken, config.MidjourneyChannelId, messageText)
 				if err != nil {
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при отправке запроса к Midjourney: "+fmt.Sprint(err))
+					msg := tgbotapi.NewMessage(chatId, "Ошибка при отправке запроса к Midjourney: "+fmt.Sprint(err))
 					msg.ReplyToMessageID = update.Message.MessageID
 					msg.DisableWebPagePreview = true
 					_, err := bot.Send(msg)
@@ -655,7 +734,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 				}
 				result := MidjourneyGetImagineResult(config.MidjourneyToken, config.MidjourneyChannelId, messageText, startTimeTimestamp)
 				if len(result.Attachments) == 0 || result.Attachments[0].URL == "" {
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при отправке запроса к Midjourney")
+					msg := tgbotapi.NewMessage(chatId, "Ошибка при отправке запроса к Midjourney")
 					msg.ReplyToMessageID = update.Message.MessageID
 					msg.DisableWebPagePreview = true
 					_, err := bot.Send(msg)
@@ -668,38 +747,74 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 						Name:  "picture",
 						Bytes: photoBytes,
 					}
-					var photoOptions = tgbotapi.NewReplyKeyboard(
-						tgbotapi.NewKeyboardButtonRow(
-							tgbotapi.NewKeyboardButton("Увеличить 1"),
-							tgbotapi.NewKeyboardButton("Увеличить 2"),
-							tgbotapi.NewKeyboardButton("Увеличить 3"),
-							tgbotapi.NewKeyboardButton("Увеличить 4"),
-						),
-						tgbotapi.NewKeyboardButtonRow(
-							tgbotapi.NewKeyboardButton("Вариация 1"),
-							tgbotapi.NewKeyboardButton("Вариация 2"),
-							tgbotapi.NewKeyboardButton("Вариация 3"),
-							tgbotapi.NewKeyboardButton("Вариация 4"),
+					midjourneyMessageInfo := MidjourneyCommandMessage{
+						Id:      result.Id,
+						Command: "U1",
+					}
+					midjourneyMessageInfoS1, _ := json.Marshal(midjourneyMessageInfo)
+					midjourneyMessageInfo = MidjourneyCommandMessage{
+						Id:      result.Id,
+						Command: "U2",
+					}
+					midjourneyMessageInfoS2, _ := json.Marshal(midjourneyMessageInfo)
+					midjourneyMessageInfo = MidjourneyCommandMessage{
+						Id:      result.Id,
+						Command: "U3",
+					}
+					midjourneyMessageInfoS3, _ := json.Marshal(midjourneyMessageInfo)
+					midjourneyMessageInfo = MidjourneyCommandMessage{
+						Id:      result.Id,
+						Command: "U4",
+					}
+					midjourneyMessageInfoS4, _ := json.Marshal(midjourneyMessageInfo)
+					midjourneyMessageInfo = MidjourneyCommandMessage{
+						Id:      result.Id,
+						Command: "V1",
+					}
+					midjourneyMessageInfoS5, _ := json.Marshal(midjourneyMessageInfo)
+					midjourneyMessageInfo = MidjourneyCommandMessage{
+						Id:      result.Id,
+						Command: "V2",
+					}
+					midjourneyMessageInfoS6, _ := json.Marshal(midjourneyMessageInfo)
+					midjourneyMessageInfo = MidjourneyCommandMessage{
+						Id:      result.Id,
+						Command: "V3",
+					}
+					midjourneyMessageInfoS7, _ := json.Marshal(midjourneyMessageInfo)
+					midjourneyMessageInfo = MidjourneyCommandMessage{
+						Id:      result.Id,
+						Command: "V4",
+					}
+					midjourneyMessageInfoS8, _ := json.Marshal(midjourneyMessageInfo)
+
+					var photoOptions = tgbotapi.NewInlineKeyboardMarkup(
+						tgbotapi.NewInlineKeyboardRow(
+							tgbotapi.NewInlineKeyboardButtonData("У1", string(midjourneyMessageInfoS1)),
+							tgbotapi.NewInlineKeyboardButtonData("У2", string(midjourneyMessageInfoS2)),
+							tgbotapi.NewInlineKeyboardButtonData("У3", string(midjourneyMessageInfoS3)),
+							tgbotapi.NewInlineKeyboardButtonData("У4", string(midjourneyMessageInfoS4)),
+							tgbotapi.NewInlineKeyboardButtonData("В1", string(midjourneyMessageInfoS5)),
+							tgbotapi.NewInlineKeyboardButtonData("В2", string(midjourneyMessageInfoS6)),
+							tgbotapi.NewInlineKeyboardButtonData("В3", string(midjourneyMessageInfoS7)),
+							tgbotapi.NewInlineKeyboardButtonData("В4", string(midjourneyMessageInfoS8)),
 						),
 					)
 
-					msg := tgbotapi.NewPhotoUpload(update.Message.Chat.ID, photoFileBytes)
+					msg := tgbotapi.NewPhotoUpload(chatId, photoFileBytes)
 					msg.ReplyToMessageID = update.Message.MessageID
 					msg.ReplyMarkup = photoOptions
 					_, err1 := bot.Send(msg)
 					if err1 != nil {
 						log.Printf("Failed to send message: %v", err1)
 					}
-					mu.Lock()
-					settings := userSettingsMap[update.Message.Chat.ID]
-					settings.LastMidjourneyPrompt = messageText
-					settings.LastMidjourneyMessage = result
-					userSettingsMap[update.Message.Chat.ID] = settings
-					mu.Unlock()
 				}
 			}
 		} else {
-			generatedTextStream, err := generateTextStreamWithGPT(messageText, update.Message.Chat.ID, model)
+			if update.Message == nil {
+				return
+			}
+			generatedTextStream, err := generateTextStreamWithGPT(messageText, chatId, model)
 			if err != nil {
 				log.Printf("Failed to generate text stream with GPT: %v", err)
 				return
@@ -719,7 +834,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					messagesCount++
 					msgText := generatedText
 					msgText2 := strings.TrimSpace(msgText) + "..."
-					msg := tgbotapi.NewMessage(update.Message.Chat.ID, msgText2)
+					msg := tgbotapi.NewMessage(chatId, msgText2)
 					msg.ReplyToMessageID = update.Message.MessageID
 					msg.DisableWebPagePreview = true
 					msg_, err := bot.Send(msg)
@@ -746,7 +861,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					msgText2 := substr(msgText, (messagesCount-1)*4000, 4000)
 					msgText3 := telegramPrepareMarkdownMessageV1(msgText2)
 					if msgText3 != messages[messagesCount-1] {
-						msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, msgText3)
+						msg := tgbotapi.NewEditMessageText(chatId, messageID, msgText3)
 						msg.ParseMode = "Markdown"
 						msg.DisableWebPagePreview = true
 						_, err := bot.Send(msg)
@@ -754,7 +869,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 							log.Printf("Failed to edit message: %v", err)
 							msgText3 = strings.TrimSpace(msgText2) + "..."
 							if msgText3 != messages[messagesCount-1] {
-								msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, msgText3)
+								msg := tgbotapi.NewEditMessageText(chatId, messageID, msgText3)
 								msg.DisableWebPagePreview = true
 								_, err = bot.Send(msg)
 								messages[messagesCount-1] = msgText3
@@ -767,7 +882,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					messagesCount++
 					msgText2 = substr(msgText, (messagesCount-1)*4000, 4000)
 					msgText3 = strings.TrimSpace(telegramPrepareMarkdownMessageV1(msgText2)) + "..."
-					msgNew := tgbotapi.NewMessage(update.Message.Chat.ID, msgText3)
+					msgNew := tgbotapi.NewMessage(chatId, msgText3)
 					msgNew.ParseMode = "Markdown"
 					msgNew.ReplyToMessageID = messageID
 					msgNew.DisableWebPagePreview = true
@@ -775,7 +890,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					if err != nil {
 						log.Printf("Failed to send message: %v", err)
 						msgText3 = strings.TrimSpace(msgText2) + "..."
-						msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, msgText3)
+						msg := tgbotapi.NewEditMessageText(chatId, messageID, msgText3)
 						msg.DisableWebPagePreview = true
 						msg_, err = bot.Send(msg)
 						messageID = msg_.MessageID
@@ -800,7 +915,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					if msgText3 == messages[i] {
 						continue
 					}
-					msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, msgText3)
+					msg := tgbotapi.NewEditMessageText(chatId, messageID, msgText3)
 					msg.ParseMode = "Markdown"
 					msg.DisableWebPagePreview = true
 					_, err = bot.Send(msg)
@@ -813,7 +928,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 						if msgText3 == messages[i] {
 							continue
 						}
-						msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, msgText3)
+						msg := tgbotapi.NewEditMessageText(chatId, messageID, msgText3)
 						msg.DisableWebPagePreview = true
 						_, err = bot.Send(msg)
 						if err != nil {
@@ -835,7 +950,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 				if msgText3 == messages[i] {
 					continue
 				}
-				msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, msgText3)
+				msg := tgbotapi.NewEditMessageText(chatId, messageID, msgText3)
 				msg.ParseMode = "Markdown"
 				msg.DisableWebPagePreview = true
 				_, err = bot.Send(msg)
@@ -845,7 +960,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					if msgText3 == messages[i] {
 						continue
 					}
-					msg := tgbotapi.NewEditMessageText(update.Message.Chat.ID, messageID, text)
+					msg := tgbotapi.NewEditMessageText(chatId, messageID, text)
 					msg.DisableWebPagePreview = true
 					_, err = bot.Send(msg)
 					if err != nil {
@@ -855,7 +970,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			}
 		}
 	}
-	CompleteResponse(update.Message.Chat.ID)
+	CompleteResponse(chatId)
 }
 
 func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
