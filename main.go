@@ -16,10 +16,13 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/api/option"
 	"gopkg.in/yaml.v2"
 
 	gpt3 "chat_bot/gpt3"
 
+	translate "cloud.google.com/go/translate/apiv3"
+	"cloud.google.com/go/translate/apiv3/translatepb"
 	openai "github.com/0x9ef/openai-go"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 	tokenizer "github.com/samber/go-gpt-3-encoder"
@@ -57,14 +60,17 @@ type User struct {
 }
 
 type Config struct {
-	DebugMode           string   `yaml:"debug_mode"`
-	TelegramToken       string   `yaml:"telegram_token"`
-	OpenAIKey           string   `yaml:"openai_api_key"`
-	BardSession         string   `yaml:"bard_session_id"`
-	AllowedUsers        []string `yaml:"allowed_telegram_usernames"`
-	BardAllowedUsers    []string `yaml:"bard_allowed_telegram_usernames"`
-	MidjourneyToken     string   `yaml:"midjourney_token"`
-	MidjourneyChannelId string   `yaml:"midjourney_channel_id"`
+	DebugMode                        string   `yaml:"debug_mode"`
+	TelegramToken                    string   `yaml:"telegram_token"`
+	OpenAIKey                        string   `yaml:"openai_api_key"`
+	BardSession                      string   `yaml:"bard_session_id"`
+	AllowedUsers                     []string `yaml:"allowed_telegram_usernames"`
+	BardAllowedUsers                 []string `yaml:"bard_allowed_telegram_usernames"`
+	MidjourneyToken                  string   `yaml:"midjourney_token"`
+	MidjourneyChannelId              string   `yaml:"midjourney_channel_id"`
+	MidjourneyTranslateRUENUsernames []string `yaml:"midjourney_translate_ru_en_usernames"`
+	GoogleCloudProjectName           string   `yaml:"google_cloud_project_name"`
+	GoogleCloudKeyfile               string   `yaml:"google_cloud_keyfile"`
 }
 
 func ReadConfig() (Config, error) {
@@ -104,12 +110,56 @@ func substr(input string, start int, length int) string {
 	return string(asRunes[start : start+length])
 }
 
+func translateText(projectID string, sourceLang string, targetLang string, text string) ([]string, error) {
+	translations := []string{}
+
+	tempdir, e := ioutil.TempDir("", "chatbot")
+	if e != nil {
+		log.Fatal(e)
+	}
+	accountKeyPath := tempdir + "/gckey.json"
+	defer os.RemoveAll(tempdir)
+	ioutil.WriteFile(accountKeyPath, []byte(config.GoogleCloudKeyfile), 0644)
+
+	// Instantiates a client
+	ctx := context.Background()
+	client, err := translate.NewTranslationClient(ctx, option.WithCredentialsFile(accountKeyPath))
+	if err != nil {
+		return translations, fmt.Errorf("NewTranslationClient: %w", err)
+	}
+	defer client.Close()
+
+	// Construct request
+	req := &translatepb.TranslateTextRequest{
+		Parent:             fmt.Sprintf("projects/%s/locations/global", projectID),
+		SourceLanguageCode: sourceLang,
+		TargetLanguageCode: targetLang,
+		MimeType:           "text/plain", // Mime types: "text/plain", "text/html"
+		Contents:           []string{text},
+	}
+
+	resp, err := client.TranslateText(ctx, req)
+	if err != nil {
+		return translations, fmt.Errorf("TranslateText: %w", err)
+	}
+
+	// Display the translation for each input text provided
+	for _, translation := range resp.GetTranslations() {
+		translations = append(translations, translation.GetTranslatedText())
+		fmt.Printf("Translated text: %v\n", translation.GetTranslatedText())
+	}
+
+	return translations, nil
+}
+
 func main() {
+
 	var err error
 	config, err = ReadConfig()
 	if err != nil {
 		log.Fatalf("Failed to read config: %v", err)
 	}
+
 	// Initialize the OpenAI API client
 	//customOpenAIAPIEndpoint := os.Getenv("CUSTOM_OPENAI_API_ENDPOINT")
 	//openaiClientGPT4 = gpt3.NewClient(config.OpenAIKey, gpt3.WithBaseURL(customOpenAIAPIEndpoint+"/v1"))
@@ -520,6 +570,22 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					mu.Unlock()
 				}
 			} else {
+				if contains(config.MidjourneyTranslateRUENUsernames, update.Message.From.UserName) {
+					if strings.HasPrefix(messageText, "en:") {
+						messageText = strings.TrimPrefix(messageText, "en:")
+					} else {
+						translationText, e := translateText(config.GoogleCloudProjectName, "ru", "en-US", messageText)
+						if e == nil && len(translationText) > 0 {
+							messageText = translationText[0]
+							msg := tgbotapi.NewMessage(update.Message.Chat.ID, messageText)
+							msg.DisableWebPagePreview = true
+							_, err := bot.Send(msg)
+							if err != nil {
+								log.Printf("Failed to send message: %v", err)
+							}
+						}
+					}
+				}
 				err := MidjourneyImagine(config.MidjourneyToken, config.MidjourneyChannelId, messageText)
 				if err != nil {
 					msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Ошибка при отправке запроса к Midjourney: "+fmt.Sprint(err))
