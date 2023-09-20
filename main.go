@@ -431,6 +431,8 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		json.Unmarshal([]byte(update.CallbackQuery.Data), &midjourneyMessageInfo)
 		messageText = midjourneyMessageInfo.Command
 		chatId = update.CallbackQuery.Message.Chat.ID
+
+		bot.AnswerCallbackQuery(tgbotapi.NewCallback(update.CallbackQuery.ID, "Выполняю запрос..."))
 	}
 	if messageText != "" {
 		if userSettingsMap[chatId].Model == BardModel {
