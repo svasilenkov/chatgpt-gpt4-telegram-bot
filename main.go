@@ -571,8 +571,15 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 				}
 			} else {
 				if contains(config.MidjourneyTranslateRUENUsernames, update.Message.From.UserName) {
-					if strings.HasPrefix(messageText, "en:") {
+					if strings.HasPrefix(messageText, "en:") || strings.HasPrefix(messageText, "En:") {
 						messageText = strings.TrimPrefix(messageText, "en:")
+						messageText = strings.TrimPrefix(messageText, "En:")
+						msg := tgbotapi.NewMessage(update.Message.Chat.ID, messageText)
+						msg.DisableWebPagePreview = true
+						_, err := bot.Send(msg)
+						if err != nil {
+							log.Printf("Failed to send message: %v", err)
+						}
 					} else {
 						translationText, e := translateText(config.GoogleCloudProjectName, "ru", "en-US", messageText)
 						if e == nil && len(translationText) > 0 {
