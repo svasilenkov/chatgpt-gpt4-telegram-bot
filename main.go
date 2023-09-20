@@ -545,8 +545,8 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 						midjourneyMessageInfoS2, _ := json.Marshal(midjourneyMessageInfo)
 						photoOptions = tgbotapi.NewInlineKeyboardMarkup(
 							tgbotapi.NewInlineKeyboardRow(
-								tgbotapi.NewInlineKeyboardButtonData("Р 2x", string(midjourneyMessageInfoS1)),
-								tgbotapi.NewInlineKeyboardButtonData("Р 1.5x", string(midjourneyMessageInfoS2)),
+								tgbotapi.NewInlineKeyboardButtonData("Расширить 2x", string(midjourneyMessageInfoS1)),
+								tgbotapi.NewInlineKeyboardButtonData("Расширить 1.5x", string(midjourneyMessageInfoS2)),
 							),
 						)
 					case "V1":
@@ -576,13 +576,43 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 							Command: "U4",
 						}
 						midjourneyMessageInfoS4, _ := json.Marshal(midjourneyMessageInfo)
+						midjourneyMessageInfo = MidjourneyCommandMessage{
+							Id:      result.Id,
+							Command: "V1",
+						}
+						midjourneyMessageInfoS5, _ := json.Marshal(midjourneyMessageInfo)
+						midjourneyMessageInfo = MidjourneyCommandMessage{
+							Id:      result.Id,
+							Command: "V2",
+						}
+						midjourneyMessageInfoS6, _ := json.Marshal(midjourneyMessageInfo)
+						midjourneyMessageInfo = MidjourneyCommandMessage{
+							Id:      result.Id,
+							Command: "V3",
+						}
+						midjourneyMessageInfoS7, _ := json.Marshal(midjourneyMessageInfo)
+						midjourneyMessageInfo = MidjourneyCommandMessage{
+							Id:      result.Id,
+							Command: "V4",
+						}
+						midjourneyMessageInfoS8, _ := json.Marshal(midjourneyMessageInfo)
 
 						photoOptions = tgbotapi.NewInlineKeyboardMarkup(
 							tgbotapi.NewInlineKeyboardRow(
-								tgbotapi.NewInlineKeyboardButtonData("У1", string(midjourneyMessageInfoS1)),
-								tgbotapi.NewInlineKeyboardButtonData("У2", string(midjourneyMessageInfoS2)),
-								tgbotapi.NewInlineKeyboardButtonData("У3", string(midjourneyMessageInfoS3)),
-								tgbotapi.NewInlineKeyboardButtonData("У4", string(midjourneyMessageInfoS4)),
+								tgbotapi.NewInlineKeyboardButtonData("Увеличить 1", string(midjourneyMessageInfoS1)),
+								tgbotapi.NewInlineKeyboardButtonData("Увеличить 2", string(midjourneyMessageInfoS2)),
+							),
+							tgbotapi.NewInlineKeyboardRow(
+								tgbotapi.NewInlineKeyboardButtonData("Увеличить 3", string(midjourneyMessageInfoS3)),
+								tgbotapi.NewInlineKeyboardButtonData("Увеличить 4", string(midjourneyMessageInfoS4)),
+							),
+							tgbotapi.NewInlineKeyboardRow(
+								tgbotapi.NewInlineKeyboardButtonData("Вариация 1", string(midjourneyMessageInfoS5)),
+								tgbotapi.NewInlineKeyboardButtonData("Вариация 2", string(midjourneyMessageInfoS6)),
+							),
+							tgbotapi.NewInlineKeyboardRow(
+								tgbotapi.NewInlineKeyboardButtonData("Вариация 3", string(midjourneyMessageInfoS7)),
+								tgbotapi.NewInlineKeyboardButtonData("Вариация 4", string(midjourneyMessageInfoS8)),
 							),
 						)
 					}
@@ -676,14 +706,20 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 
 					var photoOptions = tgbotapi.NewInlineKeyboardMarkup(
 						tgbotapi.NewInlineKeyboardRow(
-							tgbotapi.NewInlineKeyboardButtonData("У1", string(midjourneyMessageInfoS1)),
-							tgbotapi.NewInlineKeyboardButtonData("У2", string(midjourneyMessageInfoS2)),
-							tgbotapi.NewInlineKeyboardButtonData("У3", string(midjourneyMessageInfoS3)),
-							tgbotapi.NewInlineKeyboardButtonData("У4", string(midjourneyMessageInfoS4)),
-							tgbotapi.NewInlineKeyboardButtonData("В1", string(midjourneyMessageInfoS5)),
-							tgbotapi.NewInlineKeyboardButtonData("В2", string(midjourneyMessageInfoS6)),
-							tgbotapi.NewInlineKeyboardButtonData("В3", string(midjourneyMessageInfoS7)),
-							tgbotapi.NewInlineKeyboardButtonData("В4", string(midjourneyMessageInfoS8)),
+							tgbotapi.NewInlineKeyboardButtonData("Увеличить 1", string(midjourneyMessageInfoS1)),
+							tgbotapi.NewInlineKeyboardButtonData("Увеличить 2", string(midjourneyMessageInfoS2)),
+						),
+						tgbotapi.NewInlineKeyboardRow(
+							tgbotapi.NewInlineKeyboardButtonData("Увеличить 3", string(midjourneyMessageInfoS3)),
+							tgbotapi.NewInlineKeyboardButtonData("Увеличить 4", string(midjourneyMessageInfoS4)),
+						),
+						tgbotapi.NewInlineKeyboardRow(
+							tgbotapi.NewInlineKeyboardButtonData("Вариация 1", string(midjourneyMessageInfoS5)),
+							tgbotapi.NewInlineKeyboardButtonData("Вариация 2", string(midjourneyMessageInfoS6)),
+						),
+						tgbotapi.NewInlineKeyboardRow(
+							tgbotapi.NewInlineKeyboardButtonData("Вариация 3", string(midjourneyMessageInfoS7)),
+							tgbotapi.NewInlineKeyboardButtonData("Вариация 4", string(midjourneyMessageInfoS8)),
 						),
 					)
 
@@ -790,14 +826,20 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 
 					var photoOptions = tgbotapi.NewInlineKeyboardMarkup(
 						tgbotapi.NewInlineKeyboardRow(
-							tgbotapi.NewInlineKeyboardButtonData("У1", string(midjourneyMessageInfoS1)),
-							tgbotapi.NewInlineKeyboardButtonData("У2", string(midjourneyMessageInfoS2)),
-							tgbotapi.NewInlineKeyboardButtonData("У3", string(midjourneyMessageInfoS3)),
-							tgbotapi.NewInlineKeyboardButtonData("У4", string(midjourneyMessageInfoS4)),
-							tgbotapi.NewInlineKeyboardButtonData("В1", string(midjourneyMessageInfoS5)),
-							tgbotapi.NewInlineKeyboardButtonData("В2", string(midjourneyMessageInfoS6)),
-							tgbotapi.NewInlineKeyboardButtonData("В3", string(midjourneyMessageInfoS7)),
-							tgbotapi.NewInlineKeyboardButtonData("В4", string(midjourneyMessageInfoS8)),
+							tgbotapi.NewInlineKeyboardButtonData("Увеличить 1", string(midjourneyMessageInfoS1)),
+							tgbotapi.NewInlineKeyboardButtonData("Увеличить 2", string(midjourneyMessageInfoS2)),
+						),
+						tgbotapi.NewInlineKeyboardRow(
+							tgbotapi.NewInlineKeyboardButtonData("Увеличить 3", string(midjourneyMessageInfoS3)),
+							tgbotapi.NewInlineKeyboardButtonData("Увеличить 4", string(midjourneyMessageInfoS4)),
+						),
+						tgbotapi.NewInlineKeyboardRow(
+							tgbotapi.NewInlineKeyboardButtonData("Вариация 1", string(midjourneyMessageInfoS5)),
+							tgbotapi.NewInlineKeyboardButtonData("Вариация 2", string(midjourneyMessageInfoS6)),
+						),
+						tgbotapi.NewInlineKeyboardRow(
+							tgbotapi.NewInlineKeyboardButtonData("Вариация 3", string(midjourneyMessageInfoS7)),
+							tgbotapi.NewInlineKeyboardButtonData("Вариация 4", string(midjourneyMessageInfoS8)),
 						),
 					)
 
