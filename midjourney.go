@@ -55,7 +55,7 @@ type DiscordMessage struct {
 }
 
 func MidjourneyLoadChannelMessages(token, channelId string) []DiscordMessage {
-	result := LoadBytesFromURL("https://discord.com/api/v9/channels/"+channelId+"/messages?limit=50", token)
+	result := LoadBytesFromURL("https://discord.com/api/v9/channels/"+channelId+"/messages?limit=100", token)
 
 	messages := []DiscordMessage{}
 	err := json.Unmarshal(result, &messages)
