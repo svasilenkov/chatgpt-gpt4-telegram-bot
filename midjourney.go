@@ -193,8 +193,27 @@ func MidjourneyGetImagineResult(token, channelId, prompt, timestamp string) Disc
 	return result
 }
 
-func MidjourneyGetUpscaleResult(token, channelId, prompt, label, timestamp string) DiscordMessage {
-	textLabel := strings.ReplaceAll(label, "U", "Image #")
+func MidjourneyGetUpscaleOrVariationResult(token, channelId, prompt, label, timestamp string) DiscordMessage {
+	textLabel := ""
+	switch label {
+	case "U1":
+		fallthrough
+	case "U2":
+		fallthrough
+	case "U3":
+		fallthrough
+	case "U4":
+		textLabel = strings.ReplaceAll(label, "U", "Image #")
+	case "V1":
+		fallthrough
+	case "V2":
+		fallthrough
+	case "V3":
+		fallthrough
+	case "V4":
+		textLabel = "Variations"
+	}
+
 	result := DiscordMessage{}
 	startTime, _ := time.Parse(time.RFC3339, timestamp)
 	for {
@@ -206,6 +225,37 @@ func MidjourneyGetUpscaleResult(token, channelId, prompt, label, timestamp strin
 			}
 			if strings.HasPrefix(message.Content, "**"+prompt+"**") &&
 				strings.Contains(message.Content, textLabel) {
+				if len(message.Attachments) == 0 ||
+					strings.Contains(message.Content, "%)") ||
+					(len(message.Attachments) > 0 && strings.HasSuffix(message.Attachments[0].URL, ".webp")) {
+					break
+				} else {
+					result = message
+					fmt.Println(message)
+					break
+				}
+			}
+		}
+		if len(result.Attachments) > 0 && result.Attachments[0].URL != "" {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+	return result
+}
+
+func MidjourneyGetOutpaintResult(token, channelId, prompt, label, timestamp string) DiscordMessage {
+	result := DiscordMessage{}
+	startTime, _ := time.Parse(time.RFC3339, timestamp)
+	for {
+		messages := MidjourneyLoadChannelMessages(token, channelId)
+		for _, message := range messages {
+			msgTime, _ := time.Parse(time.RFC3339, message.Timestamp)
+			if msgTime.Before(startTime) {
+				continue
+			}
+			if strings.HasPrefix(message.Content, "**"+prompt+"**") &&
+				strings.Contains(message.Content, label) {
 				if len(message.Attachments) == 0 ||
 					strings.Contains(message.Content, "%)") ||
 					(len(message.Attachments) > 0 && strings.HasSuffix(message.Attachments[0].URL, ".webp")) {
@@ -244,12 +294,7 @@ func LoadBytesFromURL(url string, token string) []byte {
 	return []byte(body)
 }
 
-type UpscaleRequest struct {
-	Index     int32  `json:"index"`
-	ChannelID string `json:"channel_id"`
-}
-
-func MidjourneyUpscale(token, channelId, prompt string, message DiscordMessage, label string) error {
+func MidjourneyUpscaleOrVariation(token, channelId string, message DiscordMessage, label string) error {
 	upscaleComponent := DiscordMessageComponent{}
 	for _, components := range message.Components {
 		for _, component := range components.Components {
@@ -273,6 +318,67 @@ func MidjourneyUpscale(token, channelId, prompt string, message DiscordMessage, 
 		Data: map[string]any{
 			"component_type": 2,
 			"custom_id":      upscaleComponent.CustomId,
+		},
+	}
+
+	b, _ := json.Marshal(interactionsReq)
+
+	url := "https://discord.com/api/v9/interactions"
+	req, err := http.NewRequest("POST", url, bytes.NewReader(b))
+	if err != nil {
+		return fmt.Errorf("Call http.NewRequest failed, err: %w", err)
+	}
+
+	req.Header.Set("Authorization", token)
+	req.Header.Set("Content-Type", "application/json")
+
+	c := &http.Client{}
+	resp, err := c.Do(req)
+	if err != nil {
+		return fmt.Errorf("Call c.Do failed, err: %w", err)
+	}
+
+	defer resp.Body.Close()
+
+	if err := MidjourneyCheckResponse(resp); err != nil {
+		return fmt.Errorf("Call checkResponse failed, err: %w", err)
+	}
+
+	return nil
+}
+
+func MidjourneyOutpaint(token, channelId string, message DiscordMessage, label string) error {
+	customIdPrefix := ""
+	switch label {
+	case "Расширить 2x":
+		customIdPrefix = "MJ::Outpaint::50"
+	case "Расширить 1.5x":
+		customIdPrefix = "MJ::Outpaint::75"
+	}
+
+	outpaintComponent := DiscordMessageComponent{}
+	for _, components := range message.Components {
+		for _, component := range components.Components {
+			if strings.HasPrefix(component.CustomId, customIdPrefix) {
+				outpaintComponent = component
+				break
+			}
+		}
+	}
+	if outpaintComponent.CustomId == "" {
+		return fmt.Errorf("outpaintComponent.CustomId is empty")
+	}
+	flags := 0
+	interactionsReq := &InteractionsRequest{
+		Type:          3,
+		ApplicationID: ApplicationID,
+		ChannelID:     message.ChannelId,
+		MessageFlags:  &flags,
+		MessageID:     &message.Id,
+		SessionID:     SessionID,
+		Data: map[string]any{
+			"component_type": 2,
+			"custom_id":      outpaintComponent.CustomId,
 		},
 	}
 
