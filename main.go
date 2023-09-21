@@ -851,6 +851,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					_, err1 := bot.Send(msg)
 					if err1 != nil {
 						log.Printf("Failed to send message: %v", err1)
+						log.Print(photoOptions)
 					}
 				}
 			}
