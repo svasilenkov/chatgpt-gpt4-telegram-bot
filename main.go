@@ -24,7 +24,7 @@ import (
 	translate "cloud.google.com/go/translate/apiv3"
 	"cloud.google.com/go/translate/apiv3/translatepb"
 	openai "github.com/0x9ef/openai-go"
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	tokenizer "github.com/samber/go-gpt-3-encoder"
 )
 
@@ -225,7 +225,7 @@ func main() {
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 
-	updates, err := bot.GetUpdatesChan(u)
+	updates := bot.GetUpdatesChan(u)
 	if err != nil {
 		log.Fatalf("Failed to get updates channel: %v", err)
 	}
@@ -400,6 +400,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		log.Printf("Failed to send message: %v", err)
 	}*/
 	messageText := ""
+	inputPhotoUrl := ""
 	if update.Message != nil {
 		messageText = update.Message.Text
 		if update.Message.Voice != nil || update.Message.Audio != nil {
@@ -420,6 +421,11 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 				log.Printf("Failed to send message: %v", err)
 			}
 		}
+		if update.Message.Photo != nil {
+			messageText = update.Message.Caption
+			inputPhotoUrl, _ = bot.GetFileDirectURL(update.Message.Photo[len(update.Message.Photo)-1].FileID)
+			time.Sleep(5 * time.Second)
+		}
 	}
 	type MidjourneyCommandMessage struct {
 		Id      string `json:"i"`
@@ -432,7 +438,10 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		messageText = midjourneyMessageInfo.Command
 		chatId = update.CallbackQuery.Message.Chat.ID
 
-		bot.AnswerCallbackQuery(tgbotapi.NewCallback(update.CallbackQuery.ID, "Выполняю запрос..."))
+		callback := tgbotapi.NewCallback(update.CallbackQuery.ID, "Выполняю запрос...")
+		if _, err := bot.Request(callback); err != nil {
+			panic(err)
+		}
 	}
 	if messageText != "" {
 		if userSettingsMap[chatId].Model == BardModel {
@@ -479,8 +488,12 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					log.Printf("Failed to send message: %v", err)
 				}
 			} else {
-				msg := tgbotapi.NewPhotoShare(chatId, "")
-				msg.FileID = result.Data[0].Url
+				photoBytes := LoadBytesFromURL(result.Data[0].Url, "")
+				photoFileBytes := tgbotapi.FileBytes{
+					Name:  "picture",
+					Bytes: photoBytes,
+				}
+				msg := tgbotapi.NewPhoto(chatId, photoFileBytes)
 				msg.ReplyToMessageID = update.Message.MessageID
 				_, err := bot.Send(msg)
 				if err != nil {
@@ -510,54 +523,203 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 						log.Printf("Failed to send message: %v", err)
 					}
 				}
-				result := MidjourneyGetUpscaleOrVariationResult(config.MidjourneyToken, config.MidjourneyChannelId, midjourneyMessagePrompt, label, startTimeTimestamp)
-				if len(result.Attachments) == 0 || result.Attachments[0].URL == "" {
-					msg := tgbotapi.NewMessage(chatId, "Ошибка при отправке запроса к Midjourney")
+				replyMessage := tgbotapi.Message{}
+				replyMessageCreated := false
+				for {
+					result, finalResult := MidjourneyGetUpscaleOrVariationResult(config.MidjourneyToken, config.MidjourneyChannelId, midjourneyMessagePrompt, label, startTimeTimestamp)
+					if len(result.Attachments) == 0 || result.Attachments[0].URL == "" {
+						msg := tgbotapi.NewMessage(chatId, "Ошибка при отправке запроса к Midjourney")
+						msg.ReplyToMessageID = update.CallbackQuery.Message.MessageID
+						msg.DisableWebPagePreview = true
+						_, err := bot.Send(msg)
+						if err != nil {
+							log.Printf("Failed to send message: %v", err)
+						}
+					} else {
+						photoBytes := LoadBytesFromURL(result.Attachments[0].URL, "")
+						photoFileBytes := tgbotapi.FileBytes{
+							Name:  "picture",
+							Bytes: photoBytes,
+						}
+						var photoOptions = tgbotapi.InlineKeyboardMarkup{}
+
+						switch messageText {
+						case "U1":
+							fallthrough
+						case "U2":
+							fallthrough
+						case "U3":
+							fallthrough
+						case "U4":
+							midjourneyMessageInfo := MidjourneyCommandMessage{
+								Id:      result.Id,
+								Command: "ZO20",
+							}
+							midjourneyMessageInfoS1, _ := json.Marshal(midjourneyMessageInfo)
+							midjourneyMessageInfo = MidjourneyCommandMessage{
+								Id:      result.Id,
+								Command: "ZO15",
+							}
+							midjourneyMessageInfoS2, _ := json.Marshal(midjourneyMessageInfo)
+							photoOptions = tgbotapi.NewInlineKeyboardMarkup(
+								tgbotapi.NewInlineKeyboardRow(
+									tgbotapi.NewInlineKeyboardButtonData("Расширить 2x", string(midjourneyMessageInfoS1)),
+									tgbotapi.NewInlineKeyboardButtonData("Расширить 1.5x", string(midjourneyMessageInfoS2)),
+								),
+							)
+						case "V1":
+							fallthrough
+						case "V2":
+							fallthrough
+						case "V3":
+							fallthrough
+						case "V4":
+							midjourneyMessageInfo := MidjourneyCommandMessage{
+								Id:      result.Id,
+								Command: "U1",
+							}
+							midjourneyMessageInfoS1, _ := json.Marshal(midjourneyMessageInfo)
+							midjourneyMessageInfo = MidjourneyCommandMessage{
+								Id:      result.Id,
+								Command: "U2",
+							}
+							midjourneyMessageInfoS2, _ := json.Marshal(midjourneyMessageInfo)
+							midjourneyMessageInfo = MidjourneyCommandMessage{
+								Id:      result.Id,
+								Command: "U3",
+							}
+							midjourneyMessageInfoS3, _ := json.Marshal(midjourneyMessageInfo)
+							midjourneyMessageInfo = MidjourneyCommandMessage{
+								Id:      result.Id,
+								Command: "U4",
+							}
+							midjourneyMessageInfoS4, _ := json.Marshal(midjourneyMessageInfo)
+							midjourneyMessageInfo = MidjourneyCommandMessage{
+								Id:      result.Id,
+								Command: "V1",
+							}
+							midjourneyMessageInfoS5, _ := json.Marshal(midjourneyMessageInfo)
+							midjourneyMessageInfo = MidjourneyCommandMessage{
+								Id:      result.Id,
+								Command: "V2",
+							}
+							midjourneyMessageInfoS6, _ := json.Marshal(midjourneyMessageInfo)
+							midjourneyMessageInfo = MidjourneyCommandMessage{
+								Id:      result.Id,
+								Command: "V3",
+							}
+							midjourneyMessageInfoS7, _ := json.Marshal(midjourneyMessageInfo)
+							midjourneyMessageInfo = MidjourneyCommandMessage{
+								Id:      result.Id,
+								Command: "V4",
+							}
+							midjourneyMessageInfoS8, _ := json.Marshal(midjourneyMessageInfo)
+
+							photoOptions = tgbotapi.NewInlineKeyboardMarkup(
+								tgbotapi.NewInlineKeyboardRow(
+									tgbotapi.NewInlineKeyboardButtonData("Увеличить 1", string(midjourneyMessageInfoS1)),
+									tgbotapi.NewInlineKeyboardButtonData("Увеличить 2", string(midjourneyMessageInfoS2)),
+								),
+								tgbotapi.NewInlineKeyboardRow(
+									tgbotapi.NewInlineKeyboardButtonData("Увеличить 3", string(midjourneyMessageInfoS3)),
+									tgbotapi.NewInlineKeyboardButtonData("Увеличить 4", string(midjourneyMessageInfoS4)),
+								),
+								tgbotapi.NewInlineKeyboardRow(
+									tgbotapi.NewInlineKeyboardButtonData("Вариация 1", string(midjourneyMessageInfoS5)),
+									tgbotapi.NewInlineKeyboardButtonData("Вариация 2", string(midjourneyMessageInfoS6)),
+								),
+								tgbotapi.NewInlineKeyboardRow(
+									tgbotapi.NewInlineKeyboardButtonData("Вариация 3", string(midjourneyMessageInfoS7)),
+									tgbotapi.NewInlineKeyboardButtonData("Вариация 4", string(midjourneyMessageInfoS8)),
+								),
+							)
+						}
+
+						if replyMessageCreated {
+							msg := tgbotapi.EditMessageMediaConfig{
+								BaseEdit: tgbotapi.BaseEdit{
+									ChatID:    chatId,
+									MessageID: replyMessage.MessageID,
+								},
+								Media: tgbotapi.NewInputMediaPhoto(photoFileBytes),
+							}
+							bot.Send(msg)
+
+							if finalResult {
+								msg := tgbotapi.NewEditMessageReplyMarkup(chatId, replyMessage.MessageID, photoOptions)
+								bot.Send(msg)
+							}
+						} else {
+							msg := tgbotapi.NewPhoto(chatId, photoFileBytes)
+							msg.ReplyToMessageID = update.CallbackQuery.Message.MessageID
+							captions := make(map[string]string)
+							captions["U1"] = "Увеличено 1"
+							captions["U2"] = "Увеличено 2"
+							captions["U3"] = "Увеличено 3"
+							captions["U4"] = "Увеличено 4"
+							captions["V1"] = "Вариация 1"
+							captions["V2"] = "Вариация 2"
+							captions["V3"] = "Вариация 3"
+							captions["V4"] = "Вариация 4"
+							msg.Caption = captions[label]
+							if finalResult {
+								msg.ReplyMarkup = photoOptions
+							}
+							replyMessage, err = bot.Send(msg)
+							if err != nil {
+								log.Printf("Failed to send message: %v", err)
+							}
+							replyMessageCreated = true
+							if !finalResult {
+								time.Sleep(2 * time.Second)
+							}
+						}
+						if finalResult {
+							break
+						}
+					}
+				}
+			} else if messageText == "ZO20" || messageText == "ZO15" {
+				label := ""
+				switch messageText {
+				case "ZO20":
+					label = "Zoom Out"
+				case "ZO15":
+					label = "Zoom Out"
+				}
+				midjourneyMessage := MidjourneyLoadChannelMessage(config.MidjourneyToken, config.MidjourneyChannelId, midjourneyMessageInfo.Id)
+				midjourneyMessagePrompt := ""
+				if strings.Contains(midjourneyMessage.Content, "**") {
+					midjourneyMessagePrompt = substr(midjourneyMessage.Content, strings.Index(midjourneyMessage.Content, "**")+2, strings.Index(midjourneyMessage.Content[strings.Index(midjourneyMessage.Content, "**")+2:], "**"))
+				}
+				err := MidjourneyOutpaint(config.MidjourneyToken, config.MidjourneyChannelId, midjourneyMessage, messageText)
+				if err != nil {
+					msg := tgbotapi.NewMessage(chatId, "Ошибка при отправке запроса к Midjourney: "+fmt.Sprint(err))
 					msg.ReplyToMessageID = update.CallbackQuery.Message.MessageID
 					msg.DisableWebPagePreview = true
 					_, err := bot.Send(msg)
 					if err != nil {
 						log.Printf("Failed to send message: %v", err)
 					}
-				} else {
-					photoBytes := LoadBytesFromURL(result.Attachments[0].URL, "")
-					photoFileBytes := tgbotapi.FileBytes{
-						Name:  "picture",
-						Bytes: photoBytes,
-					}
-					var photoOptions = tgbotapi.InlineKeyboardMarkup{}
-
-					switch messageText {
-					case "U1":
-						fallthrough
-					case "U2":
-						fallthrough
-					case "U3":
-						fallthrough
-					case "U4":
-						midjourneyMessageInfo := MidjourneyCommandMessage{
-							Id:      result.Id,
-							Command: "ZO20",
+				}
+				replyMessage := tgbotapi.Message{}
+				replyMessageCreated := false
+				for {
+					result, finalResult := MidjourneyGetOutpaintResult(config.MidjourneyToken, config.MidjourneyChannelId, midjourneyMessagePrompt, label, startTimeTimestamp)
+					if len(result.Attachments) == 0 || result.Attachments[0].URL == "" {
+						msg := tgbotapi.NewMessage(chatId, "Ошибка при отправке запроса к Midjourney")
+						msg.ReplyToMessageID = update.CallbackQuery.Message.MessageID
+						msg.DisableWebPagePreview = true
+						_, err := bot.Send(msg)
+						if err != nil {
+							log.Printf("Failed to send message: %v", err)
 						}
-						midjourneyMessageInfoS1, _ := json.Marshal(midjourneyMessageInfo)
-						midjourneyMessageInfo = MidjourneyCommandMessage{
-							Id:      result.Id,
-							Command: "ZO15",
+					} else {
+						photoBytes := LoadBytesFromURL(result.Attachments[0].URL, "")
+						photoFileBytes := tgbotapi.FileBytes{
+							Name:  "picture",
+							Bytes: photoBytes,
 						}
-						midjourneyMessageInfoS2, _ := json.Marshal(midjourneyMessageInfo)
-						photoOptions = tgbotapi.NewInlineKeyboardMarkup(
-							tgbotapi.NewInlineKeyboardRow(
-								tgbotapi.NewInlineKeyboardButtonData("Расширить 2x", string(midjourneyMessageInfoS1)),
-								tgbotapi.NewInlineKeyboardButtonData("Расширить 1.5x", string(midjourneyMessageInfoS2)),
-							),
-						)
-					case "V1":
-						fallthrough
-					case "V2":
-						fallthrough
-					case "V3":
-						fallthrough
-					case "V4":
 						midjourneyMessageInfo := MidjourneyCommandMessage{
 							Id:      result.Id,
 							Command: "U1",
@@ -599,7 +761,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 						}
 						midjourneyMessageInfoS8, _ := json.Marshal(midjourneyMessageInfo)
 
-						photoOptions = tgbotapi.NewInlineKeyboardMarkup(
+						var photoOptions = tgbotapi.NewInlineKeyboardMarkup(
 							tgbotapi.NewInlineKeyboardRow(
 								tgbotapi.NewInlineKeyboardButtonData("Увеличить 1", string(midjourneyMessageInfoS1)),
 								tgbotapi.NewInlineKeyboardButtonData("Увеличить 2", string(midjourneyMessageInfoS2)),
@@ -617,120 +779,43 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 								tgbotapi.NewInlineKeyboardButtonData("Вариация 4", string(midjourneyMessageInfoS8)),
 							),
 						)
-					}
 
-					msg := tgbotapi.NewPhotoUpload(chatId, photoFileBytes)
-					msg.ReplyToMessageID = update.CallbackQuery.Message.MessageID
-					msg.ReplyMarkup = photoOptions
-					_, err1 := bot.Send(msg)
-					if err1 != nil {
-						log.Printf("Failed to send message: %v", err1)
-					}
-				}
-			} else if messageText == "ZO20" || messageText == "ZO15" {
-				label := ""
-				switch messageText {
-				case "ZO20":
-					label = "Zoom Out"
-				case "ZO15":
-					label = "Zoom Out"
-				}
-				midjourneyMessage := MidjourneyLoadChannelMessage(config.MidjourneyToken, config.MidjourneyChannelId, midjourneyMessageInfo.Id)
-				midjourneyMessagePrompt := ""
-				if strings.Contains(midjourneyMessage.Content, "**") {
-					midjourneyMessagePrompt = substr(midjourneyMessage.Content, strings.Index(midjourneyMessage.Content, "**")+2, strings.Index(midjourneyMessage.Content[strings.Index(midjourneyMessage.Content, "**")+2:], "**"))
-				}
-				err := MidjourneyOutpaint(config.MidjourneyToken, config.MidjourneyChannelId, midjourneyMessage, messageText)
-				if err != nil {
-					msg := tgbotapi.NewMessage(chatId, "Ошибка при отправке запроса к Midjourney: "+fmt.Sprint(err))
-					msg.ReplyToMessageID = update.CallbackQuery.Message.MessageID
-					msg.DisableWebPagePreview = true
-					_, err := bot.Send(msg)
-					if err != nil {
-						log.Printf("Failed to send message: %v", err)
-					}
-				}
-				result := MidjourneyGetOutpaintResult(config.MidjourneyToken, config.MidjourneyChannelId, midjourneyMessagePrompt, label, startTimeTimestamp)
-				if len(result.Attachments) == 0 || result.Attachments[0].URL == "" {
-					msg := tgbotapi.NewMessage(chatId, "Ошибка при отправке запроса к Midjourney")
-					msg.ReplyToMessageID = update.CallbackQuery.Message.MessageID
-					msg.DisableWebPagePreview = true
-					_, err := bot.Send(msg)
-					if err != nil {
-						log.Printf("Failed to send message: %v", err)
-					}
-				} else {
-					photoBytes := LoadBytesFromURL(result.Attachments[0].URL, "")
-					photoFileBytes := tgbotapi.FileBytes{
-						Name:  "picture",
-						Bytes: photoBytes,
-					}
-					midjourneyMessageInfo := MidjourneyCommandMessage{
-						Id:      result.Id,
-						Command: "U1",
-					}
-					midjourneyMessageInfoS1, _ := json.Marshal(midjourneyMessageInfo)
-					midjourneyMessageInfo = MidjourneyCommandMessage{
-						Id:      result.Id,
-						Command: "U2",
-					}
-					midjourneyMessageInfoS2, _ := json.Marshal(midjourneyMessageInfo)
-					midjourneyMessageInfo = MidjourneyCommandMessage{
-						Id:      result.Id,
-						Command: "U3",
-					}
-					midjourneyMessageInfoS3, _ := json.Marshal(midjourneyMessageInfo)
-					midjourneyMessageInfo = MidjourneyCommandMessage{
-						Id:      result.Id,
-						Command: "U4",
-					}
-					midjourneyMessageInfoS4, _ := json.Marshal(midjourneyMessageInfo)
-					midjourneyMessageInfo = MidjourneyCommandMessage{
-						Id:      result.Id,
-						Command: "V1",
-					}
-					midjourneyMessageInfoS5, _ := json.Marshal(midjourneyMessageInfo)
-					midjourneyMessageInfo = MidjourneyCommandMessage{
-						Id:      result.Id,
-						Command: "V2",
-					}
-					midjourneyMessageInfoS6, _ := json.Marshal(midjourneyMessageInfo)
-					midjourneyMessageInfo = MidjourneyCommandMessage{
-						Id:      result.Id,
-						Command: "V3",
-					}
-					midjourneyMessageInfoS7, _ := json.Marshal(midjourneyMessageInfo)
-					midjourneyMessageInfo = MidjourneyCommandMessage{
-						Id:      result.Id,
-						Command: "V4",
-					}
-					midjourneyMessageInfoS8, _ := json.Marshal(midjourneyMessageInfo)
+						if replyMessageCreated {
+							msg := tgbotapi.EditMessageMediaConfig{
+								BaseEdit: tgbotapi.BaseEdit{
+									ChatID:    chatId,
+									MessageID: replyMessage.MessageID,
+								},
+								Media: tgbotapi.NewInputMediaPhoto(photoFileBytes),
+							}
+							bot.Send(msg)
 
-					var photoOptions = tgbotapi.NewInlineKeyboardMarkup(
-						tgbotapi.NewInlineKeyboardRow(
-							tgbotapi.NewInlineKeyboardButtonData("Увеличить 1", string(midjourneyMessageInfoS1)),
-							tgbotapi.NewInlineKeyboardButtonData("Увеличить 2", string(midjourneyMessageInfoS2)),
-						),
-						tgbotapi.NewInlineKeyboardRow(
-							tgbotapi.NewInlineKeyboardButtonData("Увеличить 3", string(midjourneyMessageInfoS3)),
-							tgbotapi.NewInlineKeyboardButtonData("Увеличить 4", string(midjourneyMessageInfoS4)),
-						),
-						tgbotapi.NewInlineKeyboardRow(
-							tgbotapi.NewInlineKeyboardButtonData("Вариация 1", string(midjourneyMessageInfoS5)),
-							tgbotapi.NewInlineKeyboardButtonData("Вариация 2", string(midjourneyMessageInfoS6)),
-						),
-						tgbotapi.NewInlineKeyboardRow(
-							tgbotapi.NewInlineKeyboardButtonData("Вариация 3", string(midjourneyMessageInfoS7)),
-							tgbotapi.NewInlineKeyboardButtonData("Вариация 4", string(midjourneyMessageInfoS8)),
-						),
-					)
-
-					msg := tgbotapi.NewPhotoUpload(chatId, photoFileBytes)
-					msg.ReplyToMessageID = update.CallbackQuery.Message.MessageID
-					msg.ReplyMarkup = photoOptions
-					_, err1 := bot.Send(msg)
-					if err1 != nil {
-						log.Printf("Failed to send message: %v", err1)
+							if finalResult {
+								msg := tgbotapi.NewEditMessageReplyMarkup(chatId, replyMessage.MessageID, photoOptions)
+								bot.Send(msg)
+							}
+						} else {
+							msg := tgbotapi.NewPhoto(chatId, photoFileBytes)
+							msg.ReplyToMessageID = update.CallbackQuery.Message.MessageID
+							captions := make(map[string]string)
+							captions["ZO20"] = "Расширено 2x"
+							captions["ZO15"] = "Расширено 1.5x"
+							msg.Caption = captions[label]
+							if finalResult {
+								msg.ReplyMarkup = photoOptions
+							}
+							replyMessage, err = bot.Send(msg)
+							if err != nil {
+								log.Printf("Failed to send message: %v", err)
+							}
+							replyMessageCreated = true
+							if !finalResult {
+								time.Sleep(2 * time.Second)
+							}
+						}
+						if finalResult {
+							break
+						}
 					}
 				}
 			} else {
@@ -760,7 +845,11 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 						}
 					}
 				}
-				err := MidjourneyImagine(config.MidjourneyToken, config.MidjourneyChannelId, messageText)
+				prompt := messageText
+				if inputPhotoUrl != "" {
+					prompt = inputPhotoUrl + " " + messageText
+				}
+				err := MidjourneyImagine(config.MidjourneyToken, config.MidjourneyChannelId, prompt)
 				if err != nil {
 					msg := tgbotapi.NewMessage(chatId, "Ошибка при отправке запроса к Midjourney: "+fmt.Sprint(err))
 					msg.ReplyToMessageID = update.Message.MessageID
@@ -770,95 +859,123 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 						log.Printf("Failed to send message: %v", err)
 					}
 				}
-				result := MidjourneyGetImagineResult(config.MidjourneyToken, config.MidjourneyChannelId, messageText, startTimeTimestamp)
-				if len(result.Attachments) == 0 || result.Attachments[0].URL == "" {
-					msg := tgbotapi.NewMessage(chatId, "Ошибка при отправке запроса к Midjourney")
-					msg.ReplyToMessageID = update.Message.MessageID
-					msg.DisableWebPagePreview = true
-					_, err := bot.Send(msg)
-					if err != nil {
-						log.Printf("Failed to send message: %v", err)
-					}
-				} else {
-					photoBytes := LoadBytesFromURL(result.Attachments[0].URL, "")
-					photoFileBytes := tgbotapi.FileBytes{
-						Name:  "picture",
-						Bytes: photoBytes,
-					}
-					midjourneyMessageInfo := MidjourneyCommandMessage{
-						Id:      result.Id,
-						Command: "U1",
-					}
-					midjourneyMessageInfoS1, _ := json.Marshal(midjourneyMessageInfo)
-					midjourneyMessageInfo = MidjourneyCommandMessage{
-						Id:      result.Id,
-						Command: "U2",
-					}
-					midjourneyMessageInfoS2, _ := json.Marshal(midjourneyMessageInfo)
-					midjourneyMessageInfo = MidjourneyCommandMessage{
-						Id:      result.Id,
-						Command: "U3",
-					}
-					midjourneyMessageInfoS3, _ := json.Marshal(midjourneyMessageInfo)
-					midjourneyMessageInfo = MidjourneyCommandMessage{
-						Id:      result.Id,
-						Command: "U4",
-					}
-					midjourneyMessageInfoS4, _ := json.Marshal(midjourneyMessageInfo)
-					midjourneyMessageInfo = MidjourneyCommandMessage{
-						Id:      result.Id,
-						Command: "V1",
-					}
-					midjourneyMessageInfoS5, _ := json.Marshal(midjourneyMessageInfo)
-					midjourneyMessageInfo = MidjourneyCommandMessage{
-						Id:      result.Id,
-						Command: "V2",
-					}
-					midjourneyMessageInfoS6, _ := json.Marshal(midjourneyMessageInfo)
-					midjourneyMessageInfo = MidjourneyCommandMessage{
-						Id:      result.Id,
-						Command: "V3",
-					}
-					midjourneyMessageInfoS7, _ := json.Marshal(midjourneyMessageInfo)
-					midjourneyMessageInfo = MidjourneyCommandMessage{
-						Id:      result.Id,
-						Command: "V4",
-					}
-					midjourneyMessageInfoS8, _ := json.Marshal(midjourneyMessageInfo)
-
-					var photoOptions = tgbotapi.NewInlineKeyboardMarkup(
-						tgbotapi.NewInlineKeyboardRow(
-							tgbotapi.NewInlineKeyboardButtonData("Увеличить 1", string(midjourneyMessageInfoS1)),
-							tgbotapi.NewInlineKeyboardButtonData("Увеличить 2", string(midjourneyMessageInfoS2)),
-						),
-						tgbotapi.NewInlineKeyboardRow(
-							tgbotapi.NewInlineKeyboardButtonData("Увеличить 3", string(midjourneyMessageInfoS3)),
-							tgbotapi.NewInlineKeyboardButtonData("Увеличить 4", string(midjourneyMessageInfoS4)),
-						),
-						tgbotapi.NewInlineKeyboardRow(
-							tgbotapi.NewInlineKeyboardButtonData("Вариация 1", string(midjourneyMessageInfoS5)),
-							tgbotapi.NewInlineKeyboardButtonData("Вариация 2", string(midjourneyMessageInfoS6)),
-						),
-						tgbotapi.NewInlineKeyboardRow(
-							tgbotapi.NewInlineKeyboardButtonData("Вариация 3", string(midjourneyMessageInfoS7)),
-							tgbotapi.NewInlineKeyboardButtonData("Вариация 4", string(midjourneyMessageInfoS8)),
-						),
-					)
-
-					msg := tgbotapi.NewPhotoUpload(chatId, photoFileBytes)
-					msg.ReplyToMessageID = update.Message.MessageID
-					msg.ReplyMarkup = photoOptions
-					_, err1 := bot.Send(msg)
-					if err1 != nil {
-						log.Printf("Failed to send message: %v", err1)
-						log.Print(photoOptions)
-
-						msg := tgbotapi.NewMessage(chatId, "Не удалось отправить ответ от Midjourney")
+				replyMessage := tgbotapi.Message{}
+				replyMessageCreated := false
+				for {
+					result, finalResult := MidjourneyGetImagineResult(config.MidjourneyToken, config.MidjourneyChannelId, messageText, startTimeTimestamp)
+					if len(result.Attachments) == 0 || result.Attachments[0].URL == "" {
+						msg := tgbotapi.NewMessage(chatId, "Ошибка при отправке запроса к Midjourney")
 						msg.ReplyToMessageID = update.Message.MessageID
 						msg.DisableWebPagePreview = true
-						_, err := bot.Send(msg)
-						if err != nil {
-							log.Printf("Failed to send message: %v", err)
+						bot.Send(msg)
+					} else {
+						fmt.Println(result.Attachments[0].URL)
+						photoBytes := LoadBytesFromURL(result.Attachments[0].URL, "")
+						photoFileBytes := tgbotapi.FileBytes{
+							Name:  "picture",
+							Bytes: photoBytes,
+						}
+						midjourneyMessageInfo := MidjourneyCommandMessage{
+							Id:      result.Id,
+							Command: "U1",
+						}
+						midjourneyMessageInfoS1, _ := json.Marshal(midjourneyMessageInfo)
+						midjourneyMessageInfo = MidjourneyCommandMessage{
+							Id:      result.Id,
+							Command: "U2",
+						}
+						midjourneyMessageInfoS2, _ := json.Marshal(midjourneyMessageInfo)
+						midjourneyMessageInfo = MidjourneyCommandMessage{
+							Id:      result.Id,
+							Command: "U3",
+						}
+						midjourneyMessageInfoS3, _ := json.Marshal(midjourneyMessageInfo)
+						midjourneyMessageInfo = MidjourneyCommandMessage{
+							Id:      result.Id,
+							Command: "U4",
+						}
+						midjourneyMessageInfoS4, _ := json.Marshal(midjourneyMessageInfo)
+						midjourneyMessageInfo = MidjourneyCommandMessage{
+							Id:      result.Id,
+							Command: "V1",
+						}
+						midjourneyMessageInfoS5, _ := json.Marshal(midjourneyMessageInfo)
+						midjourneyMessageInfo = MidjourneyCommandMessage{
+							Id:      result.Id,
+							Command: "V2",
+						}
+						midjourneyMessageInfoS6, _ := json.Marshal(midjourneyMessageInfo)
+						midjourneyMessageInfo = MidjourneyCommandMessage{
+							Id:      result.Id,
+							Command: "V3",
+						}
+						midjourneyMessageInfoS7, _ := json.Marshal(midjourneyMessageInfo)
+						midjourneyMessageInfo = MidjourneyCommandMessage{
+							Id:      result.Id,
+							Command: "V4",
+						}
+						midjourneyMessageInfoS8, _ := json.Marshal(midjourneyMessageInfo)
+
+						var photoOptions = tgbotapi.NewInlineKeyboardMarkup(
+							tgbotapi.NewInlineKeyboardRow(
+								tgbotapi.NewInlineKeyboardButtonData("Увеличить 1", string(midjourneyMessageInfoS1)),
+								tgbotapi.NewInlineKeyboardButtonData("Увеличить 2", string(midjourneyMessageInfoS2)),
+							),
+							tgbotapi.NewInlineKeyboardRow(
+								tgbotapi.NewInlineKeyboardButtonData("Увеличить 3", string(midjourneyMessageInfoS3)),
+								tgbotapi.NewInlineKeyboardButtonData("Увеличить 4", string(midjourneyMessageInfoS4)),
+							),
+							tgbotapi.NewInlineKeyboardRow(
+								tgbotapi.NewInlineKeyboardButtonData("Вариация 1", string(midjourneyMessageInfoS5)),
+								tgbotapi.NewInlineKeyboardButtonData("Вариация 2", string(midjourneyMessageInfoS6)),
+							),
+							tgbotapi.NewInlineKeyboardRow(
+								tgbotapi.NewInlineKeyboardButtonData("Вариация 3", string(midjourneyMessageInfoS7)),
+								tgbotapi.NewInlineKeyboardButtonData("Вариация 4", string(midjourneyMessageInfoS8)),
+							),
+						)
+
+						if replyMessageCreated {
+							msg := tgbotapi.EditMessageMediaConfig{
+								BaseEdit: tgbotapi.BaseEdit{
+									ChatID:    chatId,
+									MessageID: replyMessage.MessageID,
+								},
+								Media: tgbotapi.NewInputMediaPhoto(photoFileBytes),
+							}
+							bot.Send(msg)
+
+							if finalResult {
+								msg := tgbotapi.NewEditMessageReplyMarkup(chatId, replyMessage.MessageID, photoOptions)
+								bot.Send(msg)
+							}
+						} else {
+							msg := tgbotapi.NewPhoto(chatId, photoFileBytes)
+							msg.ReplyToMessageID = update.Message.MessageID
+							msg.Caption = messageText
+							if finalResult {
+								msg.ReplyMarkup = photoOptions
+							}
+							replyMessage, err = bot.Send(msg)
+							if err != nil {
+								log.Printf("Failed to send message: %v", err)
+								log.Print(photoOptions)
+
+								msg := tgbotapi.NewMessage(chatId, "Не удалось отправить ответ от Midjourney")
+								msg.ReplyToMessageID = update.Message.MessageID
+								msg.DisableWebPagePreview = true
+								_, err := bot.Send(msg)
+								if err != nil {
+									log.Printf("Failed to send message: %v", err)
+								}
+							}
+							replyMessageCreated = true
+							if !finalResult {
+								time.Sleep(2 * time.Second)
+							}
+						}
+						if finalResult {
+							break
 						}
 					}
 				}

@@ -172,7 +172,8 @@ func MidjourneyImagine(token, channelId, prompt string) error {
 	return nil
 }
 
-func MidjourneyGetImagineResult(token, channelId, prompt, timestamp string) DiscordMessage {
+func MidjourneyGetImagineResult(token, channelId, prompt, timestamp string) (DiscordMessage, bool) {
+	finalResult := false
 	result := DiscordMessage{}
 	startTime, _ := time.Parse(time.RFC3339, timestamp)
 	for {
@@ -182,11 +183,10 @@ func MidjourneyGetImagineResult(token, channelId, prompt, timestamp string) Disc
 			if msgTime.Before(startTime) {
 				continue
 			}
-			if strings.HasPrefix(message.Content, "**"+prompt+"**") &&
+			if ((strings.Contains(message.Content, prompt+"**") && strings.Contains(message.Content, "https://")) ||
+				strings.HasPrefix(message.Content, "**"+prompt+"**")) &&
 				!strings.Contains(message.Content, "Image #") {
-				if len(message.Attachments) == 0 ||
-					strings.Contains(message.Content, "%)") ||
-					(len(message.Attachments) > 0 && strings.HasSuffix(message.Attachments[0].URL, ".webp")) {
+				if len(message.Attachments) == 0 {
 					break
 				} else {
 					result = message
@@ -196,14 +196,19 @@ func MidjourneyGetImagineResult(token, channelId, prompt, timestamp string) Disc
 			}
 		}
 		if len(result.Attachments) > 0 && result.Attachments[0].URL != "" {
+			if strings.HasSuffix(result.Attachments[0].URL, ".webp") {
+				finalResult = false
+			} else {
+				finalResult = true
+			}
 			break
 		}
 		time.Sleep(1 * time.Second)
 	}
-	return result
+	return result, finalResult
 }
 
-func MidjourneyGetUpscaleOrVariationResult(token, channelId, prompt, label, timestamp string) DiscordMessage {
+func MidjourneyGetUpscaleOrVariationResult(token, channelId, prompt, label, timestamp string) (DiscordMessage, bool) {
 	textLabel := ""
 	switch label {
 	case "U1":
@@ -224,6 +229,7 @@ func MidjourneyGetUpscaleOrVariationResult(token, channelId, prompt, label, time
 		textLabel = "Variations"
 	}
 
+	finalResult := false
 	result := DiscordMessage{}
 	startTime, _ := time.Parse(time.RFC3339, timestamp)
 	for {
@@ -233,11 +239,10 @@ func MidjourneyGetUpscaleOrVariationResult(token, channelId, prompt, label, time
 			if msgTime.Before(startTime) {
 				continue
 			}
-			if strings.HasPrefix(message.Content, "**"+prompt+"**") &&
+			if ((strings.Contains(message.Content, prompt+"**") && strings.Contains(message.Content, "https://")) ||
+				strings.HasPrefix(message.Content, "**"+prompt+"**")) &&
 				strings.Contains(message.Content, textLabel) {
-				if len(message.Attachments) == 0 ||
-					strings.Contains(message.Content, "%)") ||
-					(len(message.Attachments) > 0 && strings.HasSuffix(message.Attachments[0].URL, ".webp")) {
+				if len(message.Attachments) == 0 {
 					break
 				} else {
 					result = message
@@ -247,14 +252,20 @@ func MidjourneyGetUpscaleOrVariationResult(token, channelId, prompt, label, time
 			}
 		}
 		if len(result.Attachments) > 0 && result.Attachments[0].URL != "" {
+			if strings.HasSuffix(result.Attachments[0].URL, ".webp") {
+				finalResult = false
+			} else {
+				finalResult = true
+			}
 			break
 		}
 		time.Sleep(1 * time.Second)
 	}
-	return result
+	return result, finalResult
 }
 
-func MidjourneyGetOutpaintResult(token, channelId, prompt, label, timestamp string) DiscordMessage {
+func MidjourneyGetOutpaintResult(token, channelId, prompt, label, timestamp string) (DiscordMessage, bool) {
+	finalResult := false
 	result := DiscordMessage{}
 	startTime, _ := time.Parse(time.RFC3339, timestamp)
 	for {
@@ -264,11 +275,10 @@ func MidjourneyGetOutpaintResult(token, channelId, prompt, label, timestamp stri
 			if msgTime.Before(startTime) {
 				continue
 			}
-			if strings.HasPrefix(message.Content, "**"+prompt+"**") &&
+			if ((strings.Contains(message.Content, prompt+"**") && strings.Contains(message.Content, "https://")) ||
+				strings.HasPrefix(message.Content, "**"+prompt+"**")) &&
 				strings.Contains(message.Content, label) {
-				if len(message.Attachments) == 0 ||
-					strings.Contains(message.Content, "%)") ||
-					(len(message.Attachments) > 0 && strings.HasSuffix(message.Attachments[0].URL, ".webp")) {
+				if len(message.Attachments) == 0 {
 					break
 				} else {
 					result = message
@@ -278,11 +288,16 @@ func MidjourneyGetOutpaintResult(token, channelId, prompt, label, timestamp stri
 			}
 		}
 		if len(result.Attachments) > 0 && result.Attachments[0].URL != "" {
+			if strings.HasSuffix(result.Attachments[0].URL, ".webp") {
+				finalResult = false
+			} else {
+				finalResult = true
+			}
 			break
 		}
 		time.Sleep(1 * time.Second)
 	}
-	return result
+	return result, finalResult
 }
 
 func LoadBytesFromURL(url string, token string) []byte {
