@@ -944,6 +944,8 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 								Media: tgbotapi.NewInputMediaPhoto(photoFileBytes),
 							}
 							bot.Send(msg)
+							msg1 := tgbotapi.NewEditMessageCaption(chatId, replyMessage.MessageID, messageText)
+							bot.Send(msg1)
 
 							if finalResult {
 								msg := tgbotapi.NewEditMessageReplyMarkup(chatId, replyMessage.MessageID, photoOptions)
