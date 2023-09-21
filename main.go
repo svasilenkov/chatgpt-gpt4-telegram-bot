@@ -852,6 +852,14 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					if err1 != nil {
 						log.Printf("Failed to send message: %v", err1)
 						log.Print(photoOptions)
+
+						msg := tgbotapi.NewMessage(chatId, "Не удалось отправить ответ от Midjourney")
+						msg.ReplyToMessageID = update.Message.MessageID
+						msg.DisableWebPagePreview = true
+						_, err := bot.Send(msg)
+						if err != nil {
+							log.Printf("Failed to send message: %v", err)
+						}
 					}
 				}
 			}
