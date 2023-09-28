@@ -8,8 +8,9 @@ import (
 	"net/http"
 	"strings"
 
+	googlesearch "chat_bot/googlesearch"
+
 	"github.com/jaytaylor/html2text"
-	googlesearch "github.com/rocketlaunchr/google-search"
 )
 
 type FunctionArgs struct {

@@ -6,10 +6,11 @@ require (
 	cloud.google.com/go/translate v1.9.0
 	github.com/0x9ef/openai-go v0.0.0-20230413055631-1a690b5e7fa0
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
+	github.com/gocolly/colly/v2 v2.1.0
 	github.com/jaytaylor/html2text v0.0.0-20230321000545-74c2419ad056
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/rocketlaunchr/google-search v1.1.6
 	github.com/samber/go-gpt-3-encoder v0.3.1
+	golang.org/x/time v0.3.0
 	google.golang.org/api v0.142.0
 	gopkg.in/yaml.v2 v2.4.0
 )
@@ -29,7 +30,6 @@ require (
 	github.com/go-playground/universal-translator v0.18.0 // indirect
 	github.com/go-playground/validator/v10 v10.11.1 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
-	github.com/gocolly/colly/v2 v2.1.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/go-cmp v0.5.9 // indirect
@@ -51,7 +51,6 @@ require (
 	golang.org/x/sync v0.3.0 // indirect
 	golang.org/x/sys v0.12.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
-	golang.org/x/time v0.3.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20230803162519-f966b187b2e5 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20230803162519-f966b187b2e5 // indirect
