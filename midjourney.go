@@ -196,8 +196,9 @@ func MidjourneyGetImagineResult(token, channelId, prompt, timestamp string) (Dis
 			}
 		}
 		if len(result.Attachments) > 0 && result.Attachments[0].URL != "" {
-			if strings.HasSuffix(result.Attachments[0].URL, ".webp") {
+			if strings.Contains(result.Attachments[0].URL, ".webp") {
 				finalResult = false
+				continue
 			} else {
 				finalResult = true
 			}
@@ -252,8 +253,9 @@ func MidjourneyGetUpscaleOrVariationResult(token, channelId, prompt, label, time
 			}
 		}
 		if len(result.Attachments) > 0 && result.Attachments[0].URL != "" {
-			if strings.HasSuffix(result.Attachments[0].URL, ".webp") {
+			if strings.Contains(result.Attachments[0].URL, ".webp") {
 				finalResult = false
+				continue
 			} else {
 				finalResult = true
 			}
@@ -288,8 +290,9 @@ func MidjourneyGetOutpaintResult(token, channelId, prompt, label, timestamp stri
 			}
 		}
 		if len(result.Attachments) > 0 && result.Attachments[0].URL != "" {
-			if strings.HasSuffix(result.Attachments[0].URL, ".webp") {
+			if strings.Contains(result.Attachments[0].URL, ".webp") {
 				finalResult = false
+				continue
 			} else {
 				finalResult = true
 			}
