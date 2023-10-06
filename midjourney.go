@@ -308,7 +308,9 @@ func LoadBytesFromURL(url string, token string) []byte {
 	req, err := http.NewRequest("GET", url, nil)
 
 	// add authorization header to the req
-	req.Header.Add("Authorization", token)
+	if token != "" {
+		req.Header.Add("Authorization", token)
+	}
 
 	// Send req using http Client
 	client := &http.Client{}
