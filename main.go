@@ -494,7 +494,9 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					Bytes: photoBytes,
 				}
 				msg := tgbotapi.NewPhoto(chatId, photoFileBytes)
-				msg.ReplyToMessageID = update.Message.MessageID
+				if update.Message != nil {
+					msg.ReplyToMessageID = update.Message.MessageID
+				}
 				_, err := bot.Send(msg)
 				if err != nil {
 					log.Printf("Failed to send message: %v", err)
