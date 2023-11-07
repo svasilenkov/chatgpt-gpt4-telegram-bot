@@ -31,14 +31,15 @@ import (
 const (
 	GPT4Model          = "gpt-4"
 	GPT4Model0613      = "gpt-4-0613"
+	GPT4Model1106      = "gpt-4-1106-preview"
 	GPT35TurboModel    = "gpt-3.5-turbo-0613"
 	GPT35TurboModel16k = "gpt-3.5-turbo-16k"
 	BardModel          = "bard"
-	DalleModel         = "dalle"
+	DalleModel         = "dalle-e-3"
 	MidjourneyModel    = "midjourney"
 )
 
-const DefaultModel = GPT4Model0613
+const DefaultModel = GPT4Model1106
 const DefaultSystemPrompt = "You are a helpful AI assistant."
 
 var config Config
@@ -1190,7 +1191,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	case "gpt4":
 		mu.Lock()
 		userSettingsMap[update.Message.Chat.ID] = User{
-			Model: GPT4Model0613,
+			Model: GPT4Model1106,
 		}
 		// Reset the conversation history for the user
 		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{}
@@ -1337,6 +1338,9 @@ func generateTextWithGPT(inputText string, chatID int64, model string) (string, 
 	maxTokens := 4096
 	if model == GPT4Model || model == GPT4Model0613 {
 		maxTokens = 8192
+	}
+	if model == GPT4Model1106 {
+		maxTokens = 120000
 	}
 	e, err := tokenizer.NewEncoder()
 	if err != nil {
@@ -1491,6 +1495,8 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 				maxTokens = 8192
 			} else if model == GPT35TurboModel16k {
 				maxTokens = 16384
+			} else if model == GPT4Model1106 {
+				maxTokens = 120000
 			}
 			totalTokens := 0
 			for _, message := range conversationHistory[chatID] {
