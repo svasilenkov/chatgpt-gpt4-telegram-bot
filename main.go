@@ -35,7 +35,7 @@ const (
 	GPT35TurboModel    = "gpt-3.5-turbo-0613"
 	GPT35TurboModel16k = "gpt-3.5-turbo-16k"
 	BardModel          = "bard"
-	DalleModel         = "dalle-e-3"
+	DalleModel         = "dall-e-3"
 	MidjourneyModel    = "midjourney"
 )
 
