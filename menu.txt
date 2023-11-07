@@ -1,7 +1,6 @@
 start - Начать работу с ботом
 new - Начать новую беседу
 gpt4 - Включить OpenAI GPT4
-gpt35 - Включить OpenAI GPT3.5
 midjourney - Включить Midjourney
-dalle - Включить OpenAI DALL-E 2
+dalle - Включить OpenAI DALL-E 3
 system_prompt - Задать системный промпт
