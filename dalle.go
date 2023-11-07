@@ -20,7 +20,7 @@ type GenerationsResult struct {
 func DalleGenerations(openaiToken, prompt string, imageCount int, size string) GenerationsResult {
 	result := SendJSONToURLBearer(
 		"https://api.openai.com/v1/images/generations",
-		`{ "model": "`+DalleModel+`",  "prompt": "`+prompt+`", "n":`+fmt.Sprint(imageCount)+`, "size":"`+size+`" }`, openaiToken, "POST")
+		`{ "model": "`+DalleModel+`",  "prompt": "`+prompt+`", "n":`+fmt.Sprint(imageCount)+`, "size":"`+size+`", "quality": "hd" }`, openaiToken, "POST")
 
 	var generationsResult GenerationsResult
 	err := json.Unmarshal(result, &generationsResult)
