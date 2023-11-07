@@ -1340,24 +1340,26 @@ func generateTextWithGPT(inputText string, chatID int64, model string) (string, 
 		maxTokens = 8192
 	}
 	if model == GPT4Model1106 {
-		maxTokens = 120000
+		maxTokens = 4096
 	}
 	e, err := tokenizer.NewEncoder()
 	if err != nil {
 		return "", fmt.Errorf("failed to create encoder: %w", err)
 	}
 	totalTokens := 0
-	for _, message := range conversationHistory[chatID] {
-		q, err := e.Encode(message.Content)
-		if err != nil {
-			return "", fmt.Errorf("failed to encode message: %w", err)
+	if model != GPT4Model1106 {
+		for _, message := range conversationHistory[chatID] {
+			q, err := e.Encode(message.Content)
+			if err != nil {
+				return "", fmt.Errorf("failed to encode message: %w", err)
+			}
+			totalTokens += len(q)
+			q, err = e.Encode(message.Role)
+			if err != nil {
+				return "", fmt.Errorf("failed to encode message: %w", err)
+			}
+			totalTokens += len(q)
 		}
-		totalTokens += len(q)
-		q, err = e.Encode(message.Role)
-		if err != nil {
-			return "", fmt.Errorf("failed to encode message: %w", err)
-		}
-		totalTokens += len(q)
 	}
 	maxTokens -= totalTokens
 	request := gpt3.ChatCompletionRequest{
@@ -1496,22 +1498,24 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 			} else if model == GPT35TurboModel16k {
 				maxTokens = 16384
 			} else if model == GPT4Model1106 {
-				maxTokens = 120000
+				maxTokens = 4096
 			}
 			totalTokens := 0
-			for _, message := range conversationHistory[chatID] {
-				q, err := e.Encode(message.Content)
-				if err != nil {
-					return // nil, fmt.Errorf("failed to encode message: %w", err)
+			if model != GPT4Model1106 {
+				for _, message := range conversationHistory[chatID] {
+					q, err := e.Encode(message.Content)
+					if err != nil {
+						return // nil, fmt.Errorf("failed to encode message: %w", err)
+					}
+					totalTokens += len(q)
+					q, err = e.Encode(message.Role)
+					if err != nil {
+						return // nil, fmt.Errorf("failed to encode message: %w", err)
+					}
+					totalTokens += len(q)
 				}
-				totalTokens += len(q)
-				q, err = e.Encode(message.Role)
-				if err != nil {
-					return // nil, fmt.Errorf("failed to encode message: %w", err)
-				}
-				totalTokens += len(q)
+				maxTokens -= totalTokens + totalTokensForFunctions + 100
 			}
-			maxTokens -= totalTokens + totalTokensForFunctions + 100
 
 			if maxTokens < 10 {
 				response <- "Ошибка: закончился размер контекста, использовано " + fmt.Sprint(totalTokens+totalTokensForFunctions) + " токенов.\n\n"
