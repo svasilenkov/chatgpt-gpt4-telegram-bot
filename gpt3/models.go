@@ -32,6 +32,21 @@ type EnginesResponse struct {
 	Object string         `json:"object"`
 }
 
+type ChatCompletionRequestImageUrl struct {
+	Url    string `json:"url"`
+	Detail string `json:"detail"`
+}
+
+type ChatCompletionRequestContentEntryText struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type ChatCompletionRequestContentEntryImage struct {
+	Type     string                        `json:"type"`
+	ImageUrl ChatCompletionRequestImageUrl `json:"image_url,omitempty"`
+}
+
 // ChatCompletionRequestMessage is a message to use as the context for the chat completion API
 type ChatCompletionRequestMessage struct {
 	// Role is the role is the role of the the message. Can be "system", "user", or "assistant"
@@ -40,7 +55,7 @@ type ChatCompletionRequestMessage struct {
 	Name string `json:"name,omitempty"`
 
 	// Content is the content of the message
-	Content      string      `json:"content"`
+	Content      interface{} `json:"content"`
 	FunctionCall interface{} `json:"function_call,omitempty"`
 }
 
@@ -65,7 +80,7 @@ type ChatCompletionRequest struct {
 	// Messages is a list of messages to use as the context for the chat completion.
 	Messages []ChatCompletionRequestMessage `json:"messages"`
 
-	Functions []ChatCompletionRequestFunction `json:"functions"`
+	Functions []ChatCompletionRequestFunction `json:"functions,omitempty"`
 
 	// What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic
 	Temperature *float32 `json:"temperature,omitempty"`

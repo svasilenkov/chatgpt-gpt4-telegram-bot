@@ -32,6 +32,7 @@ const (
 	GPT4Model          = "gpt-4"
 	GPT4Model0613      = "gpt-4-0613"
 	GPT4Model1106      = "gpt-4-1106-preview"
+	GPT4ModelVision    = "gpt-4-vision-preview"
 	GPT35TurboModel    = "gpt-3.5-turbo-0613"
 	GPT35TurboModel16k = "gpt-3.5-turbo-16k"
 	BardModel          = "bard"
@@ -425,7 +426,26 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		if update.Message.Photo != nil {
 			messageText = update.Message.Caption
 			inputPhotoUrl, _ = bot.GetFileDirectURL(update.Message.Photo[len(update.Message.Photo)-1].FileID)
-			time.Sleep(5 * time.Second)
+			time.Sleep(500 * time.Millisecond)
+			_, settingsExists := userSettingsMap[update.Message.Chat.ID]
+			if inputPhotoUrl != "" && (!settingsExists || userSettingsMap[update.Message.Chat.ID].Model == GPT4Model1106 || userSettingsMap[update.Message.Chat.ID].Model == "") {
+				chatID := update.Message.Chat.ID
+				mu.Lock()
+				conversationHistory[chatID] = append(conversationHistory[chatID], gpt3.ChatCompletionRequestMessage{
+					Role: "user",
+					Content: []interface{}{
+						gpt3.ChatCompletionRequestContentEntryImage{
+							Type: "image_url",
+							ImageUrl: gpt3.ChatCompletionRequestImageUrl{
+								Url:    inputPhotoUrl,
+								Detail: "high",
+							},
+						},
+					},
+				})
+				mu.Unlock()
+				messageText = ""
+			}
 		}
 	}
 	type MidjourneyCommandMessage struct {
@@ -1267,23 +1287,23 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	case "retry":
 		break
 		// Retry the last message
-		mu.Lock()
-		lastMessage := conversationHistory[update.Message.Chat.ID][len(conversationHistory[update.Message.Chat.ID])-2]
-		conversationHistory[update.Message.Chat.ID] = conversationHistory[update.Message.Chat.ID][:len(conversationHistory[update.Message.Chat.ID])-2]
-		model := userSettingsMap[update.Message.Chat.ID].Model
-		if model == "" {
-			model = DefaultModel
-		}
-		mu.Unlock()
-		generatedText, err := generateTextWithGPT(lastMessage.Content, update.Message.Chat.ID, model)
-		if err != nil {
-			log.Printf("Failed to generate text with GPT: %v", err)
-			return
-		}
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, generatedText)
-		msg.ReplyToMessageID = update.Message.MessageID
-		msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
-		bot.Send(msg)
+		// mu.Lock()
+		// lastMessage := conversationHistory[update.Message.Chat.ID][len(conversationHistory[update.Message.Chat.ID])-2]
+		// conversationHistory[update.Message.Chat.ID] = conversationHistory[update.Message.Chat.ID][:len(conversationHistory[update.Message.Chat.ID])-2]
+		// model := userSettingsMap[update.Message.Chat.ID].Model
+		// if model == "" {
+		// 	model = DefaultModel
+		// }
+		// mu.Unlock()
+		// generatedText, err := generateTextWithGPT(lastMessage.Content, update.Message.Chat.ID, model)
+		// if err != nil {
+		// 	log.Printf("Failed to generate text with GPT: %v", err)
+		// 	return
+		// }
+		// msg := tgbotapi.NewMessage(update.Message.Chat.ID, generatedText)
+		// msg.ReplyToMessageID = update.Message.MessageID
+		// msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
+		// bot.Send(msg)
 	case "stop":
 		mu.Lock()
 		user := userSettingsMap[update.Message.Chat.ID]
@@ -1349,7 +1369,10 @@ func generateTextWithGPT(inputText string, chatID int64, model string) (string, 
 	totalTokens := 0
 	if model != GPT4Model1106 {
 		for _, message := range conversationHistory[chatID] {
-			q, err := e.Encode(message.Content)
+			if message.Content.(string) == "" {
+				continue
+			}
+			q, err := e.Encode(message.Content.(string))
 			if err != nil {
 				return "", fmt.Errorf("failed to encode message: %w", err)
 			}
@@ -1439,7 +1462,7 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 		TopP:        1,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(10*time.Minute))
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(1000*time.Minute))
 	mu.Lock()
 	user := userSettingsMap[chatID]
 	user.CurrentContext = &cancel
@@ -1501,9 +1524,14 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 				maxTokens = 4096
 			}
 			totalTokens := 0
-			if model != GPT4Model1106 {
-				for _, message := range conversationHistory[chatID] {
-					q, err := e.Encode(message.Content)
+			images := []gpt3.ChatCompletionRequestContentEntryImage{}
+			imageFound := false
+			messages := []gpt3.ChatCompletionRequestMessage{}
+
+			for _, message := range conversationHistory[chatID] {
+				switch message.Content.(type) {
+				case string:
+					q, err := e.Encode(message.Content.(string))
 					if err != nil {
 						return // nil, fmt.Errorf("failed to encode message: %w", err)
 					}
@@ -1513,23 +1541,62 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 						return // nil, fmt.Errorf("failed to encode message: %w", err)
 					}
 					totalTokens += len(q)
+
+					if len(images) > 0 {
+						messages = append(messages, gpt3.ChatCompletionRequestMessage{
+							Role: message.Role,
+							Content: []interface{}{
+								gpt3.ChatCompletionRequestContentEntryText{
+									Type: "text",
+									Text: message.Content.(string),
+								},
+							},
+						})
+						for _, image := range images {
+							messages[len(messages)-1].Content = append(messages[len(messages)-1].Content.([]interface{}), image)
+						}
+						images = []gpt3.ChatCompletionRequestContentEntryImage{}
+					} else {
+						messages = append(messages, message)
+					}
+				default:
+					imageFound = true
+					images = append(images, message.Content.([]interface{})[0].(gpt3.ChatCompletionRequestContentEntryImage))
 				}
-				maxTokens -= totalTokens + totalTokensForFunctions + 100
 			}
+			maxTokens -= totalTokens + totalTokensForFunctions + 100
 
-			if maxTokens < 10 {
-				response <- "Ошибка: закончился размер контекста, использовано " + fmt.Sprint(totalTokens+totalTokensForFunctions) + " токенов.\n\n"
-				break
+			if model == GPT4Model1106 {
+				if imageFound {
+					request.Model = GPT4ModelVision
+					request.Functions = nil
+					maxTokens = 4096
+					request.MaxTokens = 4096
+				} else {
+					request.Functions = conversationFunctions
+					request.MaxTokens = maxTokens
+				}
+			} else {
+				if maxTokens < 10 {
+					response <- "Ошибка: закончился размер контекста, использовано " + fmt.Sprint(totalTokens+totalTokensForFunctions) + " токенов.\n\n"
+					break
+				}
 			}
-
-			request.MaxTokens = maxTokens
-			request.Functions = conversationFunctions
-			request.Messages = conversationHistory[chatID]
+			request.Messages = messages
 			functionCallName := ""
 			functionCallArgs := ""
+			j, _ := json.Marshal(request)
+			fmt.Println(string(j))
+			finishReason := ""
 			err = openaiClient.ChatCompletionStream(ctx, request, func(completion *gpt3.ChatCompletionStreamResponse) {
+				js, _ := json.Marshal(completion)
 				if len(completion.Choices) > 0 {
-					log.Printf("Received completion: %v\n", completion)
+					log.Printf("Received completion: %v\n", string(js))
+					// if completion.Choices[0].Delta.Content == "" &&
+					// 	completion.Choices[0].FinishReason == "" {
+					// 	time.Sleep(5000 * time.Millisecond)
+					// 	return
+					// }
 					if completion.Choices[0].Delta.FunctionCall.Name != "" ||
 						completion.Choices[0].Delta.FunctionCall.Arguments != "" {
 						functionCallName += completion.Choices[0].Delta.FunctionCall.Name
@@ -1544,7 +1611,8 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 					user.CurrentMessageBuffer += completion.Choices[0].Delta.Content
 					userSettingsMap[chatID] = user
 					mu.Unlock()
-					if completion.Choices[0].FinishReason != "" {
+					finishReason = completion.Choices[0].FinishReason
+					if completion.Choices[0].FinishReason != "" /* || completion.Choices[0].Delta.Content == ""*/ {
 						if functionCallName != "" {
 							conversationHistory[chatID] = append(conversationHistory[chatID], gpt3.ChatCompletionRequestMessage{
 								Role:    "assistant",
@@ -1566,6 +1634,14 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 					}
 				}
 			})
+			if finishReason == "" {
+				mu.Lock()
+				user := userSettingsMap[chatID]
+				userSettingsMap[chatID] = user
+				mu.Unlock()
+				CompleteResponse(chatID)
+				close(response)
+			}
 			if err != nil && strings.Contains(err.Error(), "429:tokens") {
 				delay := 10 * time.Second
 				log.Printf("Rate limit reached, waiting %v\n", delay)

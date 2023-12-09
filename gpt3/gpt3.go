@@ -408,7 +408,7 @@ func (c *client) Moderation(ctx context.Context, request ModerationRequest) (*Mo
 
 func (c *client) performRequest(req *http.Request) (*http.Response, error) {
 	client := http.Client{
-		Timeout: 30 * time.Minute,
+		Timeout: 10000 * time.Minute,
 	}
 	resp, err := client.Do(req)
 	if err != nil {
