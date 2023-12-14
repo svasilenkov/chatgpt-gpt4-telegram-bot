@@ -1680,11 +1680,10 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 				break
 			}
 		}
-		if err != nil {
-			response <- "failed to call OpenAI API: " + err.Error()
+		if err != nil {			
 			// if response open, close it
 			if _, ok := <-response; ok {
-
+                                response <- "failed to call OpenAI API: " + err.Error()
 				close(response)
 			}
 			// return nil, fmt.Errorf("failed to call OpenAI API: %w", err)
