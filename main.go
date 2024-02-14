@@ -76,7 +76,7 @@ type Config struct {
 
 func ReadConfig() (Config, error) {
 	var config Config
-	configFile, err := os.Open("/Users/sergey/config.yml")
+	configFile, err := os.Open("~/config.yml")
 	if err != nil {
 		return config, err
 	}
