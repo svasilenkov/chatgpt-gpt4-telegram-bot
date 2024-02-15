@@ -1361,7 +1361,7 @@ func generateTextWithGPT(inputText string, chatID int64, model string) (string, 
 		maxTokens = 8192
 	}
 	if model == GPT4ModelTurboPreview {
-		maxTokens = 120000
+		maxTokens = 4000
 	}
 	e, err := tokenizer.NewEncoder()
 	if err != nil {
@@ -1522,7 +1522,7 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 			} else if model == GPT35TurboModel16k {
 				maxTokens = 16384
 			} else if model == GPT4ModelTurboPreview {
-				maxTokens = 120000
+				maxTokens = 4000
 			}
 			totalTokens := 0
 			images := []gpt3.ChatCompletionRequestContentEntryImage{}
