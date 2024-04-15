@@ -32,7 +32,7 @@ const (
 	GPT4Model             = "gpt-4"
 	GPT4Model0613         = "gpt-4-0613"
 	GPT4Model1106         = "gpt-4-1106-preview"
-	GPT4Model240409       = "gpt-4-turbo-2024-04-09"
+	GPT4Model240409       = "gpt-4-turbo"
 	GPT4ModelVision       = "gpt-4-vision-preview"
 	GPT4ModelTurboPreview = "gpt-4-turbo-preview"
 	GPT35TurboModel       = "gpt-3.5-turbo-0613"
@@ -430,7 +430,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			inputPhotoUrl, _ = bot.GetFileDirectURL(update.Message.Photo[len(update.Message.Photo)-1].FileID)
 			time.Sleep(500 * time.Millisecond)
 			_, settingsExists := userSettingsMap[update.Message.Chat.ID]
-			if inputPhotoUrl != "" && (!settingsExists || userSettingsMap[update.Message.Chat.ID].Model == "") {
+			if inputPhotoUrl != "" && (!settingsExists || userSettingsMap[update.Message.Chat.ID].Model == GPT4Model240409 || userSettingsMap[update.Message.Chat.ID].Model == "") {
 				chatID := update.Message.Chat.ID
 				mu.Lock()
 				conversationHistory[chatID] = append(conversationHistory[chatID], gpt3.ChatCompletionRequestMessage{
