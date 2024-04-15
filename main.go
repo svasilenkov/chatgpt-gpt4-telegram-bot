@@ -32,6 +32,7 @@ const (
 	GPT4Model             = "gpt-4"
 	GPT4Model0613         = "gpt-4-0613"
 	GPT4Model1106         = "gpt-4-1106-preview"
+	GPT4Model240409       = "gpt-4-turbo-2024-04-09"
 	GPT4ModelVision       = "gpt-4-vision-preview"
 	GPT4ModelTurboPreview = "gpt-4-turbo-preview"
 	GPT35TurboModel       = "gpt-3.5-turbo-0613"
@@ -41,7 +42,7 @@ const (
 	MidjourneyModel       = "midjourney"
 )
 
-const DefaultModel = GPT4ModelTurboPreview
+const DefaultModel = GPT4Model240409
 const DefaultSystemPrompt = "You are a helpful AI assistant."
 
 var config Config
@@ -429,7 +430,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			inputPhotoUrl, _ = bot.GetFileDirectURL(update.Message.Photo[len(update.Message.Photo)-1].FileID)
 			time.Sleep(500 * time.Millisecond)
 			_, settingsExists := userSettingsMap[update.Message.Chat.ID]
-			if inputPhotoUrl != "" && (!settingsExists || userSettingsMap[update.Message.Chat.ID].Model == GPT4ModelTurboPreview || userSettingsMap[update.Message.Chat.ID].Model == "") {
+			if inputPhotoUrl != "" && (!settingsExists || userSettingsMap[update.Message.Chat.ID].Model == "") {
 				chatID := update.Message.Chat.ID
 				mu.Lock()
 				conversationHistory[chatID] = append(conversationHistory[chatID], gpt3.ChatCompletionRequestMessage{
@@ -1212,7 +1213,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	case "gpt4":
 		mu.Lock()
 		userSettingsMap[update.Message.Chat.ID] = User{
-			Model: GPT4ModelTurboPreview,
+			Model: GPT4Model240409,
 		}
 		// Reset the conversation history for the user
 		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{}
@@ -1360,7 +1361,7 @@ func generateTextWithGPT(inputText string, chatID int64, model string) (string, 
 	if model == GPT4Model || model == GPT4Model0613 {
 		maxTokens = 8192
 	}
-	if model == GPT4ModelTurboPreview {
+	if model == GPT4Model240409 {
 		maxTokens = 4000
 	}
 	e, err := tokenizer.NewEncoder()
@@ -1368,7 +1369,7 @@ func generateTextWithGPT(inputText string, chatID int64, model string) (string, 
 		return "", fmt.Errorf("failed to create encoder: %w", err)
 	}
 	totalTokens := 0
-	if model != GPT4ModelTurboPreview {
+	if model != GPT4Model240409 {
 		for _, message := range conversationHistory[chatID] {
 			if message.Content.(string) == "" {
 				continue
@@ -1521,7 +1522,7 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 				maxTokens = 8192
 			} else if model == GPT35TurboModel16k {
 				maxTokens = 16384
-			} else if model == GPT4ModelTurboPreview {
+			} else if model == GPT4Model240409 {
 				maxTokens = 4000
 			}
 			totalTokens := 0
@@ -1567,9 +1568,9 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 			}
 			maxTokens -= totalTokens + totalTokensForFunctions + 100
 
-			if model == GPT4ModelTurboPreview {
+			if model == GPT4Model240409 {
 				if imageFound {
-					request.Model = GPT4ModelVision
+					request.Model = GPT4Model240409
 					request.Functions = nil
 					maxTokens = 4096
 					request.MaxTokens = 4096
