@@ -33,6 +33,7 @@ const (
 	GPT4Model0613         = "gpt-4-0613"
 	GPT4Model1106         = "gpt-4-1106-preview"
 	GPT4ModelVision       = "gpt-4-vision-preview"
+	GTP4Model240424       = "gpt-4-turbo-2024-04-09"
 	GPT4ModelTurboPreview = "gpt-4-turbo-preview"
 	GPT35TurboModel       = "gpt-3.5-turbo-0613"
 	GPT35TurboModel16k    = "gpt-3.5-turbo-16k"
@@ -1569,7 +1570,7 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 
 			if model == GPT4ModelTurboPreview {
 				if imageFound {
-					request.Model = GPT4ModelVision
+					request.Model = GTP4Model240424
 					request.Functions = nil
 					maxTokens = 4096
 					request.MaxTokens = 4096
