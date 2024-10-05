@@ -339,11 +339,11 @@ func convertAudioToText(message *tgbotapi.Message, bot *tgbotapi.BotAPI) string 
 func telegramPrepareMarkdownMessageV1(msg string) string {
 	result := msg
 
-	entities := []string{"_"}
+	//entities := []string{"_"}
 
-	for _, entity := range entities {
-		result = strings.ReplaceAll(result, entity, `\`+entity)
-	}
+	//for _, entity := range entities {
+	//	result = strings.ReplaceAll(result, entity, `\`+entity)
+	//}
 	return result
 }
 
@@ -1024,93 +1024,163 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			messagesCount := 0
 			messageIDs := make([]int, 0)
 			messages := make([]string, 0)
-			for generatedText := range generatedTextStream {
-				if generatedText == "" {
-					continue
-				}
-				if text == "" {
-					// Send the first message
-					messagesCount++
-					msgText := generatedText
-					msgText2 := strings.TrimSpace(msgText) + "..."
-					msg := tgbotapi.NewMessage(chatId, msgText2)
-					msg.ReplyToMessageID = update.Message.MessageID
-					msg.DisableWebPagePreview = true
-					msg_, err := bot.Send(msg)
-					if err != nil {
-						log.Printf("Failed to send message: %v", err)
+			if model == O1PreviewModel {
+				for generatedText := range generatedTextStream {
+					if generatedText == "" {
+						continue
 					}
-					messageID = msg_.MessageID
-					messageIDs = append(messageIDs, messageID)
-					messages = append(messages, msgText2)
-					fmt.Println("Message ID: ", msg_.MessageID)
-					text += generatedText
-					continue
-				}
-				text += generatedText
-				if int(time.Since(startTime).Milliseconds()) < 3000 {
-					continue
-				}
-				startTime = time.Now().UTC()
-
-				msgText := text
-				// if the length of the text is too long, send a new message
-				if len(msgText) > messagesCount*4000 {
-					// edit the previous message
-					msgText2 := substr(msgText, (messagesCount-1)*4000, 4000)
-					msgText3 := telegramPrepareMarkdownMessageV1(msgText2)
-					if msgText3 != messages[messagesCount-1] {
-						msg := tgbotapi.NewEditMessageText(chatId, messageID, msgText3)
+					// This model generates 1 long message, slice it into 4k characters
+					// Send several telegram messages 4k long
+					for i := 0; i < len(generatedText); i += 4000 {
+						end := i + 4000
+						if end > len(generatedText) {
+							end = len(generatedText)
+						}
+						msgText := generatedText[i:end]
+						msgText2 := telegramPrepareMarkdownMessageV1(msgText)
+						msg := tgbotapi.NewMessage(chatId, msgText2)
 						msg.ParseMode = "Markdown"
+						msg.ReplyToMessageID = update.Message.MessageID
 						msg.DisableWebPagePreview = true
 						_, err := bot.Send(msg)
 						if err != nil {
-							log.Printf("Failed to edit message: %v", err)
-							msgText3 = strings.TrimSpace(msgText2) + "..."
-							if msgText3 != messages[messagesCount-1] {
-								msg := tgbotapi.NewEditMessageText(chatId, messageID, msgText3)
-								msg.DisableWebPagePreview = true
-								_, err = bot.Send(msg)
-								messages[messagesCount-1] = msgText3
+							log.Printf("Failed to send message as markdown: %v", err)
+							// send as plain text
+							msg := tgbotapi.NewMessage(chatId, msgText)
+							msg.ReplyToMessageID = update.Message.MessageID
+							msg.DisableWebPagePreview = true
+							_, err := bot.Send(msg)
+							if err != nil {
+								log.Printf("Failed to send message as plaintext: %v", err)
 							}
 						}
 					}
-					messages[messagesCount-1] = msgText3
-
-					// Create new message
-					messagesCount++
-					msgText2 = substr(msgText, (messagesCount-1)*4000, 4000)
-					msgText3 = strings.TrimSpace(telegramPrepareMarkdownMessageV1(msgText2)) + "..."
-					msgNew := tgbotapi.NewMessage(chatId, msgText3)
-					msgNew.ParseMode = "Markdown"
-					msgNew.ReplyToMessageID = messageID
-					msgNew.DisableWebPagePreview = true
-					msg_, err := bot.Send(msgNew)
-					if err != nil {
-						log.Printf("Failed to send message: %v", err)
-						msgText3 = strings.TrimSpace(msgText2) + "..."
-						msg := tgbotapi.NewEditMessageText(chatId, messageID, msgText3)
-						msg.DisableWebPagePreview = true
-						msg_, err = bot.Send(msg)
-						messageID = msg_.MessageID
-						messageIDs = append(messageIDs, messageID)
-						messages = append(messages, msgText3)
+				}
+			} else {
+				for generatedText := range generatedTextStream {
+					if generatedText == "" {
 						continue
 					}
-					messageID = msg_.MessageID
-					messageIDs = append(messageIDs, messageID)
-					messages = append(messages, msgText2)
+
+					if text == "" {
+						// Send the first message
+						messagesCount++
+						msgText := generatedText
+						msgText2 := strings.TrimSpace(msgText) + "..."
+						msg := tgbotapi.NewMessage(chatId, msgText2)
+						msg.ReplyToMessageID = update.Message.MessageID
+						msg.DisableWebPagePreview = true
+						msg_, err := bot.Send(msg)
+						if err != nil {
+							log.Printf("Failed to send message: %v", err)
+						}
+						messageID = msg_.MessageID
+						messageIDs = append(messageIDs, messageID)
+						messages = append(messages, msgText2)
+						fmt.Println("Message ID: ", msg_.MessageID)
+						text += generatedText
+						continue
+					}
+
+					text += generatedText
+					if int(time.Since(startTime).Milliseconds()) < 3000 {
+						continue
+					}
+					startTime = time.Now().UTC()
+
+					msgText := text
+					// if the length of the text is too long, send a new message
+					if len(msgText) > messagesCount*4000 {
+						// edit the previous message
+						msgText2 := substr(msgText, (messagesCount-1)*4000, 4000)
+						msgText3 := telegramPrepareMarkdownMessageV1(msgText2)
+						if msgText3 != messages[messagesCount-1] {
+							msg := tgbotapi.NewEditMessageText(chatId, messageID, msgText3)
+							msg.ParseMode = "Markdown"
+							msg.DisableWebPagePreview = true
+							_, err := bot.Send(msg)
+							if err != nil {
+								log.Printf("Failed to edit message: %v", err)
+								msgText3 = strings.TrimSpace(msgText2) + "..."
+								if msgText3 != messages[messagesCount-1] {
+									msg := tgbotapi.NewEditMessageText(chatId, messageID, msgText3)
+									msg.DisableWebPagePreview = true
+									_, err = bot.Send(msg)
+									messages[messagesCount-1] = msgText3
+								}
+							}
+						}
+						messages[messagesCount-1] = msgText3
+
+						// Create new message
+						messagesCount++
+						msgText2 = substr(msgText, (messagesCount-1)*4000, 4000)
+						msgText3 = strings.TrimSpace(telegramPrepareMarkdownMessageV1(msgText2)) + "..."
+						msgNew := tgbotapi.NewMessage(chatId, msgText3)
+						msgNew.ParseMode = "Markdown"
+						msgNew.ReplyToMessageID = messageID
+						msgNew.DisableWebPagePreview = true
+						msg_, err := bot.Send(msgNew)
+						if err != nil {
+							log.Printf("Failed to send message: %v", err)
+							msgText3 = strings.TrimSpace(msgText2) + "..."
+							msg := tgbotapi.NewEditMessageText(chatId, messageID, msgText3)
+							msg.DisableWebPagePreview = true
+							msg_, err = bot.Send(msg)
+							messageID = msg_.MessageID
+							messageIDs = append(messageIDs, messageID)
+							messages = append(messages, msgText3)
+							continue
+						}
+						messageID = msg_.MessageID
+						messageIDs = append(messageIDs, messageID)
+						messages = append(messages, msgText2)
+						continue
+					}
+
+					// Update all messages
+					for i, messageID := range messageIDs {
+						msgText2 := ""
+						msgText2 = substr(msgText, i*4000, 4000)
+						msgText3 := strings.TrimSpace(telegramPrepareMarkdownMessageV1(msgText2))
+						if i == len(messageIDs)-1 {
+							msgText3 += "..."
+						}
+						if msgText3 == messages[i] {
+							continue
+						}
+						msg := tgbotapi.NewEditMessageText(chatId, messageID, msgText3)
+						msg.ParseMode = "Markdown"
+						msg.DisableWebPagePreview = true
+						_, err = bot.Send(msg)
+						if err != nil {
+							log.Printf("Failed to edit message (Markdown): %v, message: %s", err, msgText2)
+							msgText3 = strings.TrimSpace(msgText2)
+							if i == len(messageIDs)-1 {
+								msgText3 += "..."
+							}
+							if msgText3 == messages[i] {
+								continue
+							}
+							msg := tgbotapi.NewEditMessageText(chatId, messageID, msgText3)
+							msg.DisableWebPagePreview = true
+							_, err = bot.Send(msg)
+							if err != nil {
+								log.Printf("Failed to edit message (Plaintext): %v, message: %s", err, msgText2)
+							}
+							messages[i] = msgText3
+						}
+						messages[i] = msgText3
+					}
 					continue
 				}
-
+				msgText := text
+				//fmt.Println("Whole text:\n\n", msgText)
+				//fmt.Println("Whole message:\n\n", msgText)
 				// Update all messages
 				for i, messageID := range messageIDs {
-					msgText2 := ""
-					msgText2 = substr(msgText, i*4000, 4000)
-					msgText3 := strings.TrimSpace(telegramPrepareMarkdownMessageV1(msgText2))
-					if i == len(messageIDs)-1 {
-						msgText3 += "..."
-					}
+					text = substr(msgText, i*4000, 4000)
+					msgText3 := strings.TrimSpace(telegramPrepareMarkdownMessageV1(text))
 					if msgText3 == messages[i] {
 						continue
 					}
@@ -1119,51 +1189,17 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					msg.DisableWebPagePreview = true
 					_, err = bot.Send(msg)
 					if err != nil {
-						log.Printf("Failed to edit message (Markdown): %v, message: %s", err, msgText2)
-						msgText3 = strings.TrimSpace(msgText2)
-						if i == len(messageIDs)-1 {
-							msgText3 += "..."
-						}
+						log.Printf("Failed to edit message (Markdown): %v, message: %s", err, text)
+						msgText3 = strings.TrimSpace(text)
 						if msgText3 == messages[i] {
 							continue
 						}
-						msg := tgbotapi.NewEditMessageText(chatId, messageID, msgText3)
+						msg := tgbotapi.NewEditMessageText(chatId, messageID, text)
 						msg.DisableWebPagePreview = true
 						_, err = bot.Send(msg)
 						if err != nil {
-							log.Printf("Failed to edit message (Plaintext): %v, message: %s", err, msgText2)
+							log.Printf("Failed to edit message (Plaintext): %v, message: %s", err, text)
 						}
-						messages[i] = msgText3
-					}
-					messages[i] = msgText3
-				}
-				continue
-			}
-			msgText := text
-			//fmt.Println("Whole text:\n\n", msgText)
-			//fmt.Println("Whole message:\n\n", msgText)
-			// Update all messages
-			for i, messageID := range messageIDs {
-				text = substr(msgText, i*4000, 4000)
-				msgText3 := strings.TrimSpace(telegramPrepareMarkdownMessageV1(text))
-				if msgText3 == messages[i] {
-					continue
-				}
-				msg := tgbotapi.NewEditMessageText(chatId, messageID, msgText3)
-				msg.ParseMode = "Markdown"
-				msg.DisableWebPagePreview = true
-				_, err = bot.Send(msg)
-				if err != nil {
-					log.Printf("Failed to edit message (Markdown): %v, message: %s", err, text)
-					msgText3 = strings.TrimSpace(text)
-					if msgText3 == messages[i] {
-						continue
-					}
-					msg := tgbotapi.NewEditMessageText(chatId, messageID, text)
-					msg.DisableWebPagePreview = true
-					_, err = bot.Send(msg)
-					if err != nil {
-						log.Printf("Failed to edit message (Plaintext): %v, message: %s", err, text)
 					}
 				}
 			}
@@ -1386,7 +1422,7 @@ func generateTextWithGPT(inputText string, chatID int64, model string) (string, 
 		return "", fmt.Errorf("failed to create encoder: %w", err)
 	}
 	totalTokens := 0
-	if model != GPT4ModelOmni {
+	if model != GPT4ModelOmni && model != O1PreviewModel {
 		for _, message := range conversationHistory[chatID] {
 			if message.Content.(string) == "" {
 				continue
@@ -1481,6 +1517,9 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 		Messages:    conversationHistory[chatID],
 		Temperature: &temp,
 		TopP:        1,
+	}
+	if model == O1PreviewModel {
+		request.Temperature = nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(1000*time.Minute))
@@ -1613,7 +1652,9 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 			j, _ := json.Marshal(request)
 			fmt.Println(string(j))
 			finishReason := ""
-			err = openaiClient.ChatCompletionStream(ctx, request, func(completion *gpt3.ChatCompletionStreamResponse) {
+			if model == O1PreviewModel {
+				completion, err2 := openaiClient.ChatCompletion(ctx, request)
+				_ = err2
 				js, _ := json.Marshal(completion)
 				if len(completion.Choices) > 0 {
 					log.Printf("Received completion: %v\n", string(js))
@@ -1622,43 +1663,73 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 					// 	time.Sleep(5000 * time.Millisecond)
 					// 	return
 					// }
-					if completion.Choices[0].Delta.FunctionCall.Name != "" ||
-						completion.Choices[0].Delta.FunctionCall.Arguments != "" {
-						functionCallName += completion.Choices[0].Delta.FunctionCall.Name
-						functionCallArgs += completion.Choices[0].Delta.FunctionCall.Arguments
-					} else {
-						if completion.Choices[0].Delta.Content != "" {
-							response <- completion.Choices[0].Delta.Content
-						}
+
+					if completion.Choices[0].Message.Content != "" {
+						response <- completion.Choices[0].Message.Content
 					}
 					mu.Lock()
 					user := userSettingsMap[chatID]
-					user.CurrentMessageBuffer += completion.Choices[0].Delta.Content
+					user.CurrentMessageBuffer += completion.Choices[0].Message.Content
 					userSettingsMap[chatID] = user
 					mu.Unlock()
 					finishReason = completion.Choices[0].FinishReason
 					if completion.Choices[0].FinishReason != "" /* || completion.Choices[0].Delta.Content == ""*/ {
-						if functionCallName != "" {
-							conversationHistory[chatID] = append(conversationHistory[chatID], gpt3.ChatCompletionRequestMessage{
-								Role:    "assistant",
-								Content: "",
-								FunctionCall: gpt3.ChatCompletionResponseFunctionCall{
-									Name:      functionCallName,
-									Arguments: functionCallArgs,
-								},
-							})
-							response <- functionCallName + "(" + functionCallArgs + ")\n\n"
-						} else {
-							mu.Lock()
-							user := userSettingsMap[chatID]
-							userSettingsMap[chatID] = user
-							mu.Unlock()
-							CompleteResponse(chatID)
-							close(response)
-						}
+						mu.Lock()
+						user := userSettingsMap[chatID]
+						userSettingsMap[chatID] = user
+						mu.Unlock()
+						CompleteResponse(chatID)
+						close(response)
 					}
 				}
-			})
+			} else {
+				err = openaiClient.ChatCompletionStream(ctx, request, func(completion *gpt3.ChatCompletionStreamResponse) {
+					js, _ := json.Marshal(completion)
+					if len(completion.Choices) > 0 {
+						log.Printf("Received completion: %v\n", string(js))
+						// if completion.Choices[0].Delta.Content == "" &&
+						// 	completion.Choices[0].FinishReason == "" {
+						// 	time.Sleep(5000 * time.Millisecond)
+						// 	return
+						// }
+						if completion.Choices[0].Delta.FunctionCall.Name != "" ||
+							completion.Choices[0].Delta.FunctionCall.Arguments != "" {
+							functionCallName += completion.Choices[0].Delta.FunctionCall.Name
+							functionCallArgs += completion.Choices[0].Delta.FunctionCall.Arguments
+						} else {
+							if completion.Choices[0].Delta.Content != "" {
+								response <- completion.Choices[0].Delta.Content
+							}
+						}
+						mu.Lock()
+						user := userSettingsMap[chatID]
+						user.CurrentMessageBuffer += completion.Choices[0].Delta.Content
+						userSettingsMap[chatID] = user
+						mu.Unlock()
+						finishReason = completion.Choices[0].FinishReason
+						if completion.Choices[0].FinishReason != "" /* || completion.Choices[0].Delta.Content == ""*/ {
+							if functionCallName != "" {
+								conversationHistory[chatID] = append(conversationHistory[chatID], gpt3.ChatCompletionRequestMessage{
+									Role:    "assistant",
+									Content: "",
+									FunctionCall: gpt3.ChatCompletionResponseFunctionCall{
+										Name:      functionCallName,
+										Arguments: functionCallArgs,
+									},
+								})
+								response <- functionCallName + "(" + functionCallArgs + ")\n\n"
+							} else {
+								mu.Lock()
+								user := userSettingsMap[chatID]
+								userSettingsMap[chatID] = user
+								mu.Unlock()
+								CompleteResponse(chatID)
+								close(response)
+							}
+						}
+					}
+				})
+			}
 			if finishReason == "" {
 				mu.Lock()
 				user := userSettingsMap[chatID]
