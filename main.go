@@ -29,12 +29,13 @@ import (
 )
 
 const (
+	O1PreviewModel        = "o1-preview"
 	GPT4Model             = "gpt-4"
 	GPT4Model0613         = "gpt-4-0613"
 	GPT4Model1106         = "gpt-4-1106-preview"
 	GPT4ModelVision       = "gpt-4-vision-preview"
 	GTP4Model240424       = "gpt-4-turbo-2024-04-09"
-	GTP4ModelOmni         = "gpt-4o"
+	GPT4ModelOmni         = "gpt-4o"
 	GPT4ModelTurboPreview = "gpt-4-turbo-preview"
 	GPT35TurboModel       = "gpt-3.5-turbo-0613"
 	GPT35TurboModel16k    = "gpt-3.5-turbo-16k"
@@ -43,7 +44,7 @@ const (
 	MidjourneyModel       = "midjourney"
 )
 
-const DefaultModel = GTP4ModelOmni
+const DefaultModel = GPT4ModelOmni
 const DefaultSystemPrompt = "You are a helpful AI assistant."
 
 var config Config
@@ -431,7 +432,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			inputPhotoUrl, _ = bot.GetFileDirectURL(update.Message.Photo[len(update.Message.Photo)-1].FileID)
 			time.Sleep(500 * time.Millisecond)
 			_, settingsExists := userSettingsMap[update.Message.Chat.ID]
-			if inputPhotoUrl != "" && (!settingsExists || userSettingsMap[update.Message.Chat.ID].Model == GTP4ModelOmni || userSettingsMap[update.Message.Chat.ID].Model == "") {
+			if inputPhotoUrl != "" && (!settingsExists || userSettingsMap[update.Message.Chat.ID].Model == GPT4ModelOmni || userSettingsMap[update.Message.Chat.ID].Model == "") {
 				chatID := update.Message.Chat.ID
 				mu.Lock()
 				conversationHistory[chatID] = append(conversationHistory[chatID], gpt3.ChatCompletionRequestMessage{
@@ -1214,12 +1215,24 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	case "gpt4":
 		mu.Lock()
 		userSettingsMap[update.Message.Chat.ID] = User{
-			Model: GTP4ModelOmni,
+			Model: GPT4ModelOmni,
 		}
 		// Reset the conversation history for the user
 		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{}
 		mu.Unlock()
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT 4*\\.")
+		msg.ParseMode = "MarkdownV2"
+		msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
+		bot.Send(msg)
+	case "o1":
+		mu.Lock()
+		userSettingsMap[update.Message.Chat.ID] = User{
+			Model: O1PreviewModel,
+		}
+		// Reset the conversation history for the user
+		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{}
+		mu.Unlock()
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI O1*\\.")
 		msg.ParseMode = "MarkdownV2"
 		msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
 		bot.Send(msg)
@@ -1362,15 +1375,18 @@ func generateTextWithGPT(inputText string, chatID int64, model string) (string, 
 	if model == GPT4Model || model == GPT4Model0613 {
 		maxTokens = 8192
 	}
-	if model == GTP4ModelOmni {
-		maxTokens = 4000
+	if model == GPT4ModelOmni {
+		maxTokens = 16000
+	}
+	if model == O1PreviewModel {
+		maxTokens = 32000
 	}
 	e, err := tokenizer.NewEncoder()
 	if err != nil {
 		return "", fmt.Errorf("failed to create encoder: %w", err)
 	}
 	totalTokens := 0
-	if model != GTP4ModelOmni {
+	if model != GPT4ModelOmni {
 		for _, message := range conversationHistory[chatID] {
 			if message.Content.(string) == "" {
 				continue
@@ -1435,27 +1451,29 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 	}
 
 	totalTokensForFunctions := 0
-	for _, function := range functions {
-		if function.Active == 0 || function.Default == 0 {
-			continue
-		}
-		conversationFunction := gpt3.ChatCompletionRequestFunction{}
-		conversationFunction.Name = function.Name
-		conversationFunction.Description = function.Description
-		conversationFunction.Parameters = gpt3.ChatCompletionRequestFunctionParameters{
-			Type:       "object",
-			Properties: function.Args.Properties,
-			Required:   function.Args.Required,
-		}
-		conversationFunction.FunctionCall = "auto"
-		conversationFunctions = append(conversationFunctions, conversationFunction)
+	if model != O1PreviewModel {
+		for _, function := range functions {
+			if function.Active == 0 || function.Default == 0 {
+				continue
+			}
+			conversationFunction := gpt3.ChatCompletionRequestFunction{}
+			conversationFunction.Name = function.Name
+			conversationFunction.Description = function.Description
+			conversationFunction.Parameters = gpt3.ChatCompletionRequestFunctionParameters{
+				Type:       "object",
+				Properties: function.Args.Properties,
+				Required:   function.Args.Required,
+			}
+			conversationFunction.FunctionCall = "auto"
+			conversationFunctions = append(conversationFunctions, conversationFunction)
 
-		functionS, _ := json.Marshal(conversationFunction)
-		q, err := e.Encode(string(functionS))
-		if err != nil {
-			return nil, fmt.Errorf("failed to encode message: %w", err)
+			functionS, _ := json.Marshal(conversationFunction)
+			q, err := e.Encode(string(functionS))
+			if err != nil {
+				return nil, fmt.Errorf("failed to encode message: %w", err)
+			}
+			totalTokensForFunctions += len(q)
 		}
-		totalTokensForFunctions += len(q)
 	}
 	temp := float32(0.7)
 	request := gpt3.ChatCompletionRequest{
@@ -1522,9 +1540,11 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 			if model == GPT4Model || model == GPT4Model0613 {
 				maxTokens = 8192
 			} else if model == GPT35TurboModel16k {
-				maxTokens = 16384
-			} else if model == GTP4ModelOmni {
-				maxTokens = 4000
+				maxTokens = 16000
+			} else if model == GPT4ModelOmni {
+				maxTokens = 16000
+			} else if model == O1PreviewModel {
+				maxTokens = 32000
 			}
 			totalTokens := 0
 			images := []gpt3.ChatCompletionRequestContentEntryImage{}
@@ -1569,9 +1589,11 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 			}
 			maxTokens -= totalTokens + totalTokensForFunctions + 100
 
-			if model == GTP4ModelOmni {
+			if model == O1PreviewModel {
+				request.Functions = nil
+			} else if model == GPT4ModelOmni {
 				if imageFound {
-					request.Model = GTP4ModelOmni
+					request.Model = GPT4ModelOmni
 					request.Functions = nil
 					maxTokens = 4096
 					request.MaxTokens = 4096
