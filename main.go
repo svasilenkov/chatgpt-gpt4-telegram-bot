@@ -1031,23 +1031,28 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					}
 					// This model generates 1 long message, slice it into 4k characters
 					// Send several telegram messages 4k long
-					for i := 0; i < len(generatedText); i += 4000 {
+					runes := []rune(generatedText)
+					for i := 0; i < len(runes); i += 4000 {
 						end := i + 4000
-						if end > len(generatedText) {
-							end = len(generatedText)
+						if end > len(runes) {
+							end = len(runes)
 						}
-						msgText := generatedText[i:end]
+						msgText := string(runes[i:end])
 						msgText2 := telegramPrepareMarkdownMessageV1(msgText)
 						msg := tgbotapi.NewMessage(chatId, msgText2)
 						msg.ParseMode = "Markdown"
-						msg.ReplyToMessageID = update.Message.MessageID
+						if i == 0 {
+							msg.ReplyToMessageID = update.Message.MessageID
+						}
 						msg.DisableWebPagePreview = true
 						_, err := bot.Send(msg)
 						if err != nil {
 							log.Printf("Failed to send message as markdown: %v", err)
 							// send as plain text
 							msg := tgbotapi.NewMessage(chatId, msgText)
-							msg.ReplyToMessageID = update.Message.MessageID
+							if i == 0 {
+								msg.ReplyToMessageID = update.Message.MessageID
+							}
 							msg.DisableWebPagePreview = true
 							_, err := bot.Send(msg)
 							if err != nil {
