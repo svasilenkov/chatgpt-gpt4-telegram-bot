@@ -88,6 +88,8 @@ type ChatCompletionRequest struct {
 	// An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.
 	TopP float32 `json:"top_p,omitempty"`
 
+	MaxCompletionTokens int `json:"max_completion_tokens,omitempty"`
+
 	// Number of responses to generate
 	N int `json:"n,omitempty"`
 
@@ -99,6 +101,8 @@ type ChatCompletionRequest struct {
 
 	// MaxTokens is the maximum number of tokens to return.
 	MaxTokens int `json:"max_tokens,omitempty"`
+
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 
 	// (-2, 2) Penalize tokens that haven't appeared yet in the history.
 	PresencePenalty float32 `json:"presence_penalty,omitempty"`
