@@ -30,6 +30,7 @@ import (
 
 const (
 	O3MiniModel           = "o3-mini"
+	GPT45PreviewModel     = "gpt-4.5-preview"
 	GPT4Model             = "gpt-4"
 	GPT4Model0613         = "gpt-4-0613"
 	GPT4Model1106         = "gpt-4-1106-preview"
@@ -44,7 +45,7 @@ const (
 	MidjourneyModel       = "midjourney"
 )
 
-const DefaultModel = GPT4ModelOmni
+const DefaultModel = GPT45PreviewModel
 const DefaultSystemPrompt = "You are a helpful AI assistant."
 
 var config Config
@@ -432,7 +433,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			inputPhotoUrl, _ = bot.GetFileDirectURL(update.Message.Photo[len(update.Message.Photo)-1].FileID)
 			time.Sleep(500 * time.Millisecond)
 			_, settingsExists := userSettingsMap[update.Message.Chat.ID]
-			if inputPhotoUrl != "" && (!settingsExists || userSettingsMap[update.Message.Chat.ID].Model == GPT4ModelOmni || userSettingsMap[update.Message.Chat.ID].Model == "") {
+			if inputPhotoUrl != "" && (!settingsExists || userSettingsMap[update.Message.Chat.ID].Model == GPT45PreviewModel || userSettingsMap[update.Message.Chat.ID].Model == "") {
 				chatID := update.Message.Chat.ID
 				mu.Lock()
 				conversationHistory[chatID] = append(conversationHistory[chatID], gpt3.ChatCompletionRequestMessage{
@@ -1256,7 +1257,7 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	case "gpt4":
 		mu.Lock()
 		userSettingsMap[update.Message.Chat.ID] = User{
-			Model: GPT4ModelOmni,
+			Model: GPT45PreviewModel,
 		}
 		// Reset the conversation history for the user
 		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{}
@@ -1416,7 +1417,7 @@ func generateTextWithGPT(inputText string, chatID int64, model string) (string, 
 	if model == GPT4Model || model == GPT4Model0613 {
 		maxTokens = 8192
 	}
-	if model == GPT4ModelOmni {
+	if model == GPT45PreviewModel {
 		maxTokens = 16000
 	}
 	if model == O3MiniModel {
@@ -1427,7 +1428,7 @@ func generateTextWithGPT(inputText string, chatID int64, model string) (string, 
 		return "", fmt.Errorf("failed to create encoder: %w", err)
 	}
 	totalTokens := 0
-	if model != GPT4ModelOmni && model != O3MiniModel {
+	if model != GPT45PreviewModel && model != O3MiniModel {
 		for _, message := range conversationHistory[chatID] {
 			if message.Content.(string) == "" {
 				continue
@@ -1587,7 +1588,7 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 				maxTokens = 8192
 			} else if model == GPT35TurboModel16k {
 				maxTokens = 16000
-			} else if model == GPT4ModelOmni {
+			} else if model == GPT45PreviewModel {
 				maxTokens = 16000
 			} else if model == O3MiniModel {
 				maxTokens = 90000
@@ -1637,9 +1638,9 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 
 			if model == O3MiniModel {
 				request.Functions = nil
-			} else if model == GPT4ModelOmni {
+			} else if model == GPT45PreviewModel {
 				if imageFound {
-					request.Model = GPT4ModelOmni
+					request.Model = GPT45PreviewModel
 					request.Functions = nil
 					maxTokens = 4096
 					request.MaxTokens = 4096
