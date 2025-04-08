@@ -45,7 +45,7 @@ const (
 	MidjourneyModel       = "midjourney"
 )
 
-const DefaultModel = GPT45PreviewModel
+const DefaultModel = GPT4ModelOmni
 const DefaultSystemPrompt = "You are a helpful AI assistant."
 
 var config Config
@@ -1257,12 +1257,24 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	case "gpt4":
 		mu.Lock()
 		userSettingsMap[update.Message.Chat.ID] = User{
+			Model: GPT4ModelOmni,
+		}
+		// Reset the conversation history for the user
+		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{}
+		mu.Unlock()
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT 4o*\\.")
+		msg.ParseMode = "MarkdownV2"
+		msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
+		bot.Send(msg)
+	case "gpt45":
+		mu.Lock()
+		userSettingsMap[update.Message.Chat.ID] = User{
 			Model: GPT45PreviewModel,
 		}
 		// Reset the conversation history for the user
 		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT 4*\\.")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT 4.5*\\.")
 		msg.ParseMode = "MarkdownV2"
 		msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
 		bot.Send(msg)
