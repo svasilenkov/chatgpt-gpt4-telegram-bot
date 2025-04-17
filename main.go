@@ -1539,7 +1539,7 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 	}
 	if model == O4MiniModel {
 		request.Temperature = nil
-		request.ReasoningEffort = "high"
+		request.ReasoningEffort = "medium"
 		request.MaxCompletionTokens = 90000
 	}
 
