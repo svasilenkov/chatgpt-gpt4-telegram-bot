@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	O3MiniModel           = "o3-mini"
+	O4MiniModel           = "o4-mini"
 	GPT45PreviewModel     = "gpt-4.5-preview"
 	GPT4Model             = "gpt-4"
 	GPT4Model0613         = "gpt-4-0613"
@@ -1026,7 +1026,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			messagesCount := 0
 			messageIDs := make([]int, 0)
 			messages := make([]string, 0)
-			if model == O3MiniModel {
+			if model == O4?MiniModel {
 				for generatedText := range generatedTextStream {
 					if generatedText == "" {
 						continue
@@ -1279,15 +1279,15 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		msg.ParseMode = "MarkdownV2"
 		msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
 		bot.Send(msg)
-	case "o3mini":
+	case "o4mini":
 		mu.Lock()
 		userSettingsMap[update.Message.Chat.ID] = User{
-			Model: O3MiniModel,
+			Model: O4MiniModel,
 		}
 		// Reset the conversation history for the user
 		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI O3 mini*\\.")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI O4 mini*\\.")
 		msg.ParseMode = "MarkdownV2"
 		msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
 		bot.Send(msg)
@@ -1433,7 +1433,7 @@ func generateTextWithGPT(inputText string, chatID int64, model string) (string, 
 	if model == GPT45PreviewModel {
 		maxTokens = 16000
 	}
-	if model == O3MiniModel || model == GPT41Model {
+	if model == O4MiniModel || model == GPT41Model {
 		maxTokens = 92000
 	}
 	e, err := tokenizer.NewEncoder()
@@ -1441,7 +1441,7 @@ func generateTextWithGPT(inputText string, chatID int64, model string) (string, 
 		return "", fmt.Errorf("failed to create encoder: %w", err)
 	}
 	totalTokens := 0
-	if model != GPT45PreviewModel && model != O3MiniModel {
+	if model != GPT45PreviewModel && model != O4MiniModel {
 		for _, message := range conversationHistory[chatID] {
 			if message.Content.(string) == "" {
 				continue
@@ -1506,7 +1506,7 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 	}
 
 	totalTokensForFunctions := 0
-	if model != O3MiniModel {
+	if model != O4MiniModel {
 		for _, function := range functions {
 			if function.Active == 0 || function.Default == 0 {
 				continue
@@ -1537,7 +1537,7 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 		Temperature: &temp,
 		TopP:        1,
 	}
-	if model == O3MiniModel {
+	if model == O4MiniModel {
 		request.Temperature = nil
 		request.ReasoningEffort = "high"
 		request.MaxCompletionTokens = 90000
@@ -1603,7 +1603,7 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 				maxTokens = 16000
 			} else if model == GPT45PreviewModel {
 				maxTokens = 16000
-			} else if model == O3MiniModel || model == GPT41Model {
+			} else if model == O4MiniModel || model == GPT41Model {
 				maxTokens = 90000
 			}
 			totalTokens := 0
@@ -1648,10 +1648,8 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 				}
 			}
 			maxTokens -= totalTokens + totalTokensForFunctions + 100
-
-			if model == O3MiniModel {
-				request.Functions = nil
-			} else if model == GPT45PreviewModel || model == GPT41Model {
+                        
+			if model == GPT45PreviewModel || model == GPT41Model {
 				if imageFound {
 					request.Model = GPT41Model
 					request.Functions = nil
@@ -1673,7 +1671,7 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 			j, _ := json.Marshal(request)
 			fmt.Println(string(j))
 			finishReason := ""
-			if model == O3MiniModel {
+			if model == O4MiniModel {
 				completion, err2 := openaiClient.ChatCompletion(ctx, request)
 				_ = err2
 				js, _ := json.Marshal(completion)
