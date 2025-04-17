@@ -1604,7 +1604,7 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 			} else if model == GPT45PreviewModel {
 				maxTokens = 16000
 			} else if model == O4MiniModel || model == GPT41Model {
-				maxTokens = 90000
+				maxTokens = 24000
 			}
 			totalTokens := 0
 			images := []gpt3.ChatCompletionRequestContentEntryImage{}
