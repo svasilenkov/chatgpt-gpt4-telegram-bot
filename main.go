@@ -1026,7 +1026,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			messagesCount := 0
 			messageIDs := make([]int, 0)
 			messages := make([]string, 0)
-			if model == O4?MiniModel {
+			if model == O4MiniModel {
 				for generatedText := range generatedTextStream {
 					if generatedText == "" {
 						continue
