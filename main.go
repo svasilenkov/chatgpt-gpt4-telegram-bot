@@ -1434,7 +1434,7 @@ func generateTextWithGPT(inputText string, chatID int64, model string) (string, 
 		maxTokens = 16000
 	}
 	if model == O4MiniModel || model == GPT41Model {
-		maxTokens = 92000
+		maxTokens = 24000
 	}
 	e, err := tokenizer.NewEncoder()
 	if err != nil {
