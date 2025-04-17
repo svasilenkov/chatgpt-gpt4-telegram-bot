@@ -1,6 +1,6 @@
 start - Начать работу с ботом
 new - Начать новую беседу
 gpt41 - Включить OpenAI GPT4.1
-o4-mini - Включить OpenAI O4 mini
+o4mini - Включить OpenAI O4 mini
 dalle - Включить OpenAI DALL-E 3
 system_prompt - Задать системный промпт
