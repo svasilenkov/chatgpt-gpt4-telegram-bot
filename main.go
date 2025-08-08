@@ -1027,7 +1027,7 @@ func handleMessage(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 			messagesCount := 0
 			messageIDs := make([]int, 0)
 			messages := make([]string, 0)
-			if model == O4MiniModel || model == GPT5Model {
+			if model == O4MiniModel {
 				for generatedText := range generatedTextStream {
 					if generatedText == "" {
 						continue
@@ -1430,7 +1430,7 @@ func generateTextWithGPT(inputText string, chatID int64, model string) (string, 
 		return "", fmt.Errorf("failed to create encoder: %w", err)
 	}
 	totalTokens := 0
-	if model != GPT45PreviewModel && model != O4MiniModel && model != GPT5Model {
+	if model != GPT45PreviewModel && model != O4MiniModel {
 		for _, message := range conversationHistory[chatID] {
 			if message.Content.(string) == "" {
 				continue
@@ -1495,7 +1495,7 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 	}
 
 	totalTokensForFunctions := 0
-	if model != O4MiniModel && model != GPT5Model {
+	if model != O4MiniModel {
 		for _, function := range functions {
 			if function.Active == 0 || function.Default == 0 {
 				continue
@@ -1592,8 +1592,10 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 				maxTokens = 16000
 			} else if model == GPT45PreviewModel {
 				maxTokens = 16000
-			} else if model == O4MiniModel || model == GPT5Model {
+			} else if model == O4MiniModel {
 				maxTokens = 24000
+			} else if model == GPT5Model {
+				maxTokens = 30000
 			}
 			totalTokens := 0
 			images := []gpt3.ChatCompletionRequestContentEntryImage{}
@@ -1641,12 +1643,24 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 			if model == GPT45PreviewModel || model == GPT5Model {
 				if imageFound {
 					request.Model = GPT5Model
-					request.Functions = nil
+					//request.Functions = nil
 					maxTokens = 16384
-					request.MaxTokens = 16384
+					//request.MaxTokens = 16384
+					if model == GPT5Model {
+						request.Functions = conversationFunctions
+						request.MaxCompletionTokens = maxTokens
+					} else {
+						request.Functions = conversationFunctions
+						request.MaxTokens = maxTokens
+					}
 				} else {
-					request.Functions = conversationFunctions
-					request.MaxTokens = maxTokens
+					if model == GPT5Model {
+						request.Functions = conversationFunctions
+						request.MaxCompletionTokens = maxTokens
+					} else {
+						request.Functions = conversationFunctions
+						request.MaxTokens = maxTokens
+					}
 				}
 			} else {
 				if maxTokens < 10 {
@@ -1660,11 +1674,11 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 			j, _ := json.Marshal(request)
 			fmt.Println(string(j))
 			finishReason := ""
-			if model == O4MiniModel || model == GPT5Model {
+			if model == O4MiniModel {
 				completion, err2 := openaiClient.ChatCompletion(ctx, request)
 				_ = err2
 				js, _ := json.Marshal(completion)
-				if len(completion.Choices) > 0 {
+				if err2 == nil && len(completion.Choices) > 0 {
 					log.Printf("Received completion: %v\n", string(js))
 					// if completion.Choices[0].Delta.Content == "" &&
 					// 	completion.Choices[0].FinishReason == "" {
