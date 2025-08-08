@@ -39,6 +39,7 @@ const (
 	GPT4ModelOmni         = "gpt-4o"
 	GPT41Model            = "gpt-4.1"
 	GPT4ModelTurboPreview = "gpt-4-turbo-preview"
+        GPT5Model             = "gpt-5"
 	GPT35TurboModel       = "gpt-3.5-turbo-0613"
 	GPT35TurboModel16k    = "gpt-3.5-turbo-16k"
 	BardModel             = "bard"
@@ -46,7 +47,7 @@ const (
 	MidjourneyModel       = "midjourney"
 )
 
-const DefaultModel = GPT41Model
+const DefaultModel = GPT5Model
 const DefaultSystemPrompt = "You are a helpful AI assistant."
 
 var config Config
@@ -1255,27 +1256,15 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "История беседы очищена.")
 		msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
 		bot.Send(msg)
-	case "gpt41":
+	case "gpt5":
 		mu.Lock()
 		userSettingsMap[update.Message.Chat.ID] = User{
-			Model: GPT41Model,
+			Model: GPT5Model,
 		}
 		// Reset the conversation history for the user
 		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT 4.1*\\.")
-		msg.ParseMode = "MarkdownV2"
-		msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
-		bot.Send(msg)
-	case "gpt45":
-		mu.Lock()
-		userSettingsMap[update.Message.Chat.ID] = User{
-			Model: GPT45PreviewModel,
-		}
-		// Reset the conversation history for the user
-		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{}
-		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT 4.5*\\.")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT 5*\\.")
 		msg.ParseMode = "MarkdownV2"
 		msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
 		bot.Send(msg)
@@ -1433,7 +1422,7 @@ func generateTextWithGPT(inputText string, chatID int64, model string) (string, 
 	if model == GPT45PreviewModel {
 		maxTokens = 16000
 	}
-	if model == O4MiniModel || model == GPT41Model {
+	if model == O4MiniModel || model == GPT5Model {
 		maxTokens = 24000
 	}
 	e, err := tokenizer.NewEncoder()
@@ -1603,7 +1592,7 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 				maxTokens = 16000
 			} else if model == GPT45PreviewModel {
 				maxTokens = 16000
-			} else if model == O4MiniModel || model == GPT41Model {
+			} else if model == O4MiniModel || model == GPT5Model {
 				maxTokens = 24000
 			}
 			totalTokens := 0
@@ -1649,9 +1638,9 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 			}
 			maxTokens -= totalTokens + totalTokensForFunctions + 100
                         
-			if model == GPT45PreviewModel || model == GPT41Model {
+			if model == GPT45PreviewModel || model == GPT5Model {
 				if imageFound {
-					request.Model = GPT41Model
+					request.Model = GPT5Model
 					request.Functions = nil
 					maxTokens = 16384
 					request.MaxTokens = 16384
