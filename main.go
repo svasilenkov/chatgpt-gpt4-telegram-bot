@@ -40,7 +40,7 @@ const (
 	GPT41Model            = "gpt-4.1"
 	GPT4ModelTurboPreview = "gpt-4-turbo-preview"
 	GPT5Model             = "gpt-5"
-	GPT52Model            = "gpt-5.2"
+	GPT54Model            = "gpt-5.4"
 	GPT35TurboModel       = "gpt-3.5-turbo-0613"
 	GPT35TurboModel16k    = "gpt-3.5-turbo-16k"
 	BardModel             = "bard"
@@ -48,7 +48,7 @@ const (
 	MidjourneyModel       = "midjourney"
 )
 
-const DefaultModel = GPT52Model
+const DefaultModel = GPT54Model
 const DefaultSystemPrompt = "You are a helpful AI assistant."
 
 var config Config
@@ -1260,12 +1260,12 @@ func handleCommand(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 	case "gpt5":
 		mu.Lock()
 		userSettingsMap[update.Message.Chat.ID] = User{
-			Model: GPT52Model,
+			Model: GPT54Model,
 		}
 		// Reset the conversation history for the user
 		conversationHistory[update.Message.Chat.ID] = []gpt3.ChatCompletionRequestMessage{}
 		mu.Unlock()
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT 5\\.2*\\.")
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "Включена модель *OpenAI GPT 5\\.4*\\.")
 		msg.ParseMode = "MarkdownV2"
 		msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
 		bot.Send(msg)
@@ -1423,8 +1423,8 @@ func generateTextWithGPT(inputText string, chatID int64, model string) (string, 
 	if model == GPT45PreviewModel {
 		maxTokens = 16000
 	}
-	if model == O4MiniModel || model == GPT52Model {
-		maxTokens = 24000
+	if model == O4MiniModel || model == GPT54Model {
+		maxTokens = 128000
 	}
 	e, err := tokenizer.NewEncoder()
 	if err != nil {
@@ -1527,7 +1527,7 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 		Temperature: &temp,
 		TopP:        1,
 	}
-	if model == O4MiniModel || model == GPT52Model {
+	if model == O4MiniModel || model == GPT54Model {
 		request.Temperature = nil
 		request.ReasoningEffort = "medium"
 		request.MaxCompletionTokens = 90000
@@ -1595,8 +1595,8 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 				maxTokens = 16000
 			} else if model == O4MiniModel {
 				maxTokens = 24000
-			} else if model == GPT52Model {
-				maxTokens = 30000
+			} else if model == GPT54Model {
+				maxTokens = 128000
 			}
 			totalTokens := 0
 			images := []gpt3.ChatCompletionRequestContentEntryImage{}
@@ -1641,13 +1641,13 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 			}
 			maxTokens -= totalTokens + totalTokensForFunctions + 100
 
-			if model == GPT45PreviewModel || model == GPT52Model {
+			if model == GPT45PreviewModel || model == GPT54Model {
 				if imageFound {
-					request.Model = GPT52Model
+					request.Model = GPT54Model
 					//request.Functions = nil
 					maxTokens = 16384
 					//request.MaxTokens = 16384
-					if model == GPT52Model {
+					if model == GPT54Model {
 						request.Functions = conversationFunctions
 						request.MaxCompletionTokens = maxTokens
 					} else {
@@ -1655,7 +1655,7 @@ func generateTextStreamWithGPT(inputText string, chatID int64, model string) (ch
 						request.MaxTokens = maxTokens
 					}
 				} else {
-					if model == GPT52Model {
+					if model == GPT54Model {
 						request.Functions = conversationFunctions
 						request.MaxCompletionTokens = maxTokens
 					} else {
